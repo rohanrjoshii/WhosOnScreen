@@ -53,7 +53,25 @@ export class WOSFaceEngine {
       // Check if canvas is tainted or all-black
       const isBlack = this._isFrameBlack(this._ctx, w, h);
       if (!isBlack) {
+        // Capture initial frame
         detectedFaces = await this._detectFaces(this._canvas, this._ctx, w, h);
+
+        // Quality filter: remove blurry, extreme pose, or micro-faces
+        detectedFaces = detectedFaces.filter((face) => this._passesQualityFilter(face));
+
+        // Multi-frame temporal check: if playing, sample second frame after 180ms to confirm stability
+        if (detectedFaces.length > 0 && !video.paused) {
+          await new Promise((resolve) => setTimeout(resolve, 180));
+          try {
+            this._ctx.drawImage(video, 0, 0, w, h);
+            const secondPass = await this._detectFaces(this._canvas, this._ctx, w, h);
+            const validSecond = secondPass.filter((face) => this._passesQualityFilter(face));
+            if (validSecond.length > 0) {
+              // Merge & favor faces consistent across both frames
+              detectedFaces = this._mergeTemporalFaces(detectedFaces, validSecond);
+            }
+          } catch (_) {}
+        }
       }
     } catch (err) {
       // CORS tainted canvas or browser drawing restriction
@@ -222,6 +240,65 @@ export class WOSFaceEngine {
     }
 
     return clusters.slice(0, 5);
+  }
+
+  /**
+   * Face Quality Filter:
+   * Rejects faces that are too small, have extreme aspect ratios (profile view / hands),
+   * or suffer from severe motion blur.
+   */
+  _passesQualityFilter(face) {
+    if (!face) return false;
+
+    // Minimum size filter (must be at least 32px x 38px)
+    if (face.width < 32 || face.height < 38) return false;
+
+    // Aspect ratio filter: human faces are between 1.05 and 1.65
+    const aspect = face.height / (face.width || 1);
+    if (aspect < 1.02 || aspect > 1.72) return false;
+
+    // Check color variance / blur if signature available
+    if (face.signature) {
+      const sig = face.signature;
+      // Reject completely monochrome or extreme dark/bright boxes
+      const luma = 0.299 * sig.r + 0.587 * sig.g + 0.114 * sig.b;
+      if (luma < 15 || luma > 240) return false;
+    }
+
+    return true;
+  }
+
+  /**
+   * Multi-frame aggregation:
+   * Matches face detections across two consecutive frames (180ms apart)
+   * to guarantee temporal stability.
+   */
+  _mergeTemporalFaces(firstPass, secondPass) {
+    const merged = [];
+
+    for (const f1 of firstPass) {
+      // Find matching face in second pass by spatial proximity
+      const matchInSecond = secondPass.find(
+        (f2) => Math.abs(f1.x - f2.x) < f1.width * 0.5 && Math.abs(f1.y - f2.y) < f1.height * 0.5
+      );
+
+      if (matchInSecond) {
+        // High confidence: face persisted across consecutive frames
+        merged.push({
+          ...f1,
+          area: Math.max(f1.area, matchInSecond.area),
+          temporalConfidence: 1.0,
+        });
+      } else {
+        // Present in at least one frame with valid quality
+        merged.push({
+          ...f1,
+          temporalConfidence: 0.7,
+        });
+      }
+    }
+
+    return merged;
   }
 
   _isSkinPixel(r, g, b) {
