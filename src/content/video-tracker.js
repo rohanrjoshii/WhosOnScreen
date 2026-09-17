@@ -42,7 +42,61 @@ export function getActiveVideoInfo() {
     progressPercent: duration > 0 ? (currentTime / duration) * 100 : 0,
     isPaused: activeVideo.paused,
     subtitleCue: getCurrentSubtitleCues(),
+    recentDialogue: getRecentSubtitleDialogue(45),
   };
+}
+
+// Rolling subtitle dialogue history buffer (retains dialogue across active scenes)
+const subtitleBuffer = [];
+let lastSampledText = '';
+
+/**
+ * Sample active caption cues into the rolling buffer.
+ */
+export function sampleSubtitleHistory() {
+  const cue = getCurrentSubtitleCues();
+  if (!cue || cue === lastSampledText) return;
+  lastSampledText = cue;
+
+  const video = getActiveVideoElement();
+  const vTime = video ? (video.currentTime || 0) : 0;
+  const now = Date.now();
+
+  subtitleBuffer.push({
+    videoTime: vTime,
+    realTime: now,
+    text: cue,
+  });
+
+  // Keep up to 50 recent cues
+  if (subtitleBuffer.length > 50) {
+    subtitleBuffer.shift();
+  }
+}
+
+// Continuous polling for live caption changes every 350ms
+setInterval(sampleSubtitleHistory, 350);
+
+/**
+ * Retrieve all dialogue spoken in the recent scene window (default 45s).
+ */
+export function getRecentSubtitleDialogue(windowSeconds = 45) {
+  sampleSubtitleHistory();
+  const video = getActiveVideoElement();
+  const vTime = video ? (video.currentTime || 0) : 0;
+  const now = Date.now();
+
+  const relevant = subtitleBuffer.filter((entry) => {
+    if (vTime > 0 && Math.abs(entry.videoTime - vTime) <= windowSeconds) return true;
+    return (now - entry.realTime) <= windowSeconds * 1000;
+  });
+
+  const texts = relevant.map((r) => r.text);
+  const current = getCurrentSubtitleCues();
+  if (current && !texts.includes(current)) {
+    texts.push(current);
+  }
+  return texts.join('\n');
 }
 
 /**
@@ -50,12 +104,29 @@ export function getActiveVideoInfo() {
  */
 export function getCurrentSubtitleCues() {
   const selectors = [
-    '.shaka-text-container',
-    '.bmpui-ui-subtitle-label',
+    // Netflix
     '.player-timedtext',
     '.player-timedtext-text-container',
-    '.timedTextContainer',
+    '.player-timedtext-text-container span',
+    // Prime Video
+    '.rendererContainer',
+    '.atvwebplayersdk-captions-overlay',
+    '.timedTextOverlay',
+    'span.timedTextOverlay',
+    // YouTube
+    '.ytp-caption-segment',
+    '.caption-window',
+    // JioHotstar / Shaka
+    '.shaka-text-container',
+    '.bmpui-ui-subtitle-label',
+    '[data-testid="subtitles-container"]',
+    // HBO Max / Max / Hulu / Disney
+    '[data-testid="player-caption"]',
+    '.caption-style',
     '.subtitle-text',
+    '.timedTextContainer',
+    '[class*="timed-text"]',
+    '[class*="timedtext"]',
     '[class*="subtitle"]',
     '[class*="caption"]',
   ];

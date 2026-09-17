@@ -31,7 +31,8 @@ if (!window.__wosInjected) {
         const faceResult = await faceEngine.analyzeFrame(
           videoEl,
           overlay._fullCast,
-          vInfo?.subtitleCue
+          vInfo?.subtitleCue,
+          vInfo?.recentDialogue
         );
         if (faceResult && faceResult.matches && faceResult.matches.length > 0) {
           matches = faceResult.matches;
@@ -189,6 +190,9 @@ if (!window.__wosInjected) {
           (async () => {
             const videoEl = getActiveVideoElement();
             const fullCast = message.fullCast || [];
+            const vInfo = getActiveVideoInfo();
+            const recentDialogue = vInfo?.recentDialogue || message.videoInfo?.recentDialogue;
+            const subtitleCue = vInfo?.subtitleCue || message.videoInfo?.subtitleCue;
 
             // Run real-time face detection & recognition on the video frame
             if (videoEl && fullCast.length > 0 && !message.needsManualSearch) {
@@ -196,7 +200,8 @@ if (!window.__wosInjected) {
                 const faceResult = await faceEngine.analyzeFrame(
                   videoEl,
                   fullCast,
-                  message.videoInfo?.subtitleCue
+                  subtitleCue,
+                  recentDialogue
                 );
                 if (faceResult && faceResult.matches && faceResult.matches.length > 0) {
                   message.matches = faceResult.matches;

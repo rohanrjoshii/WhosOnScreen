@@ -12,6 +12,7 @@
 
 import { MSG } from '../shared/messages.js';
 import { TMDBClient } from './tmdb-client.js';
+import { matchCastInDialogue } from '../shared/character-matcher.js';
 
 const tmdb = new TMDBClient();
 
@@ -120,44 +121,32 @@ async function runPipeline(tab) {
     return;
   }
 
-  // Stricter matching for on-screen actors:
-  // 1. If active subtitle cues contain speaker names (e.g. [Shaan] or Shelly:), prioritize those characters
-  // 2. Keep scene view strictly focused (max 2–3 actors, never an overwhelming list)
+  // Accurate matching for actors who appear and speak in this scene:
+  const dialogueText = titleResponse?.videoInfo?.recentDialogue || titleResponse?.videoInfo?.subtitleCue || '';
+  const dialogueMatches = matchCastInDialogue(dialogueText, fullCast);
+
   let onScreenActors = [];
-  const cue = (titleResponse?.videoInfo?.subtitleCue || '').toLowerCase();
+  let sceneMode = 'top_billed';
 
-  if (cue && fullCast.length > 0) {
-    const matched = fullCast.filter((p) => {
-      const charWords = (p.character || '')
-        .toLowerCase()
-        .replace(/[^a-z0-9\s]/g, ' ')
-        .split(/\s+/)
-        .filter((w) => w.length >= 3 && !['the', 'and', 'with', 'young', 'child'].includes(w));
-      const nameWords = (p.name || '')
-        .toLowerCase()
-        .split(/\s+/)
-        .filter((w) => w.length >= 3);
-
-      return (
-        charWords.some((w) => cue.includes(w)) ||
-        nameWords.some((w) => cue.includes(w))
-      );
-    });
-
-    if (matched.length > 0) {
-      onScreenActors = matched.slice(0, 3);
-    }
+  if (dialogueMatches.length > 0) {
+    onScreenActors = dialogueMatches.slice(0, 3).map((m) => ({
+      ...m.actor,
+      isSceneLead: true,
+      matchType: 'dialogue_match',
+      matchLabel: m.isSpeaker ? 'Speaking' : 'In Scene',
+      confidence: 'high',
+    }));
+    sceneMode = 'dialogue_match';
+  } else {
+    onScreenActors = fullCast.slice(0, 3).map((person) => ({
+      ...person,
+      isSceneLead: true,
+      matchType: 'top_billed',
+      matchLabel: 'Top Billed',
+      confidence: 'low',
+    }));
+    sceneMode = 'top_billed';
   }
-
-  // Fallback to top 2-3 leads if no speaker cue in this exact frame
-  if (onScreenActors.length === 0) {
-    onScreenActors = fullCast.slice(0, 3);
-  }
-
-  const onScreenLeads = onScreenActors.map((person) => ({
-    ...person,
-    isSceneLead: true,
-  }));
 
   const needsKey = await tmdb.needsApiKey();
 
@@ -165,7 +154,9 @@ async function runPipeline(tab) {
   await setState('displaying');
   await chrome.tabs.sendMessage(tab.id, {
     type: MSG.UPDATE_RESULTS,
-    matches: onScreenLeads,
+    matches: onScreenActors,
+    mode: sceneMode,
+    confidence: sceneMode === 'dialogue_match' ? 'high' : 'low',
     fullCast,
     title: castData?.title || detectedTitle || null,
     detectedTitle,

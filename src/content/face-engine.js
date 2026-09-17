@@ -15,6 +15,8 @@
  *     never as the primary decider.
  */
 
+import { matchCastInDialogue } from '../shared/character-matcher.js';
+
 export class WOSFaceEngine {
   constructor() {
     this._canvas = document.createElement('canvas');
@@ -27,9 +29,10 @@ export class WOSFaceEngine {
    * @param {HTMLVideoElement} video
    * @param {Array} castList - Full cast from TMDB
    * @param {string|null} subtitleCue - Active caption text
+   * @param {string|null} recentDialogue - 45s rolling dialogue text from current scene
    * @returns {Promise<{ hasFaces: boolean, faceCount: number, matches: Array, isDrmBlocked: boolean }>}
    */
-  async analyzeFrame(video, castList = [], subtitleCue = null) {
+  async analyzeFrame(video, castList = [], subtitleCue = null, recentDialogue = null) {
     if (!video || !castList || castList.length === 0) {
       return { hasFaces: false, faceCount: 0, matches: [], isDrmBlocked: false };
     }
@@ -74,12 +77,12 @@ export class WOSFaceEngine {
     } catch (err) {
       // CORS tainted canvas or browser drawing restriction
       console.warn('[wos:face-engine] canvas capture restricted by CORS/DRM, using scene audio/metadata:', err.message);
-      return this._fallbackHeuristic(castList, subtitleCue);
+      return this._fallbackHeuristic(castList, subtitleCue, recentDialogue);
     }
 
     // If no distinct face clusters detected, gracefully fall back to scene dialogue/leads
     if (!detectedFaces || detectedFaces.length === 0) {
-      return this._fallbackHeuristic(castList, subtitleCue);
+      return this._fallbackHeuristic(castList, subtitleCue, recentDialogue);
     }
 
     // 4. Match detected faces against cast members
@@ -88,9 +91,12 @@ export class WOSFaceEngine {
 
     const matchedCast = [];
     const usedCastIds = new Set();
-    const cueLower = (subtitleCue || '').toLowerCase();
 
-    // Limit to at most 3-4 prominent faces
+    // Evaluate active characters in this scene's dialogue
+    const dialogueMatches = matchCastInDialogue(recentDialogue || subtitleCue, castList);
+    const dialogueMap = new Map(dialogueMatches.map((m) => [m.actor.id, m]));
+
+    // Limit to at most 3-4 prominent foreground faces
     const candidateFaces = detectedFaces.slice(0, 4);
 
     for (let i = 0; i < candidateFaces.length; i++) {
@@ -98,22 +104,26 @@ export class WOSFaceEngine {
       let bestActor = null;
       let bestScore = -1;
 
-      for (let cIndex = 0; cIndex < Math.min(castList.length, 12); cIndex++) {
-        const actor = castList[cIndex];
+      // Scan up to 24 cast members so secondary characters appearing in this scene can be matched!
+      const searchCast = castList.slice(0, 24);
+
+      for (let cIndex = 0; cIndex < searchCast.length; cIndex++) {
+        const actor = searchCast[cIndex];
         if (usedCastIds.has(actor.id)) continue;
 
-        // Base visual signature score
-        let score = this._calculateVisualSimilarity(face, actor, cIndex);
+        const actorSig = this._getActorSignature(actor);
+        const visualSim = this._calculateVisualSimilarity(face.signature, actorSig);
 
-        // Subtitle Assist: If character name appears in current caption, boost score
-        if (cueLower && actor.character) {
-          const charWords = actor.character.toLowerCase().split(/\s+/).filter((w) => w.length >= 3);
-          const nameWords = (actor.name || '').toLowerCase().split(/\s+/).filter((w) => w.length >= 3);
+        let score = visualSim * 0.55;
 
-          if (charWords.some((cw) => cueLower.includes(cw)) || nameWords.some((nw) => cueLower.includes(nw))) {
-            score += 0.22; // Subtitle confidence booster
-          }
+        // Dialogue presence boost: if this character is speaking or named in recent scene dialogue
+        const dMatch = dialogueMap.get(actor.id);
+        if (dMatch) {
+          score += dMatch.isSpeaker ? 0.45 : 0.28;
         }
+
+        // Slight tie-breaker for prominence (does NOT overpower visual/dialogue match)
+        score += 0.03 / (cIndex + 1);
 
         if (score > bestScore) {
           bestScore = score;
@@ -123,12 +133,15 @@ export class WOSFaceEngine {
 
       if (bestActor) {
         usedCastIds.add(bestActor.id);
+        const dMatch = dialogueMap.get(bestActor.id);
+        const matchLabel = dMatch ? (dMatch.isSpeaker ? 'Speaking' : 'In Scene') : 'On Screen';
+
         matchedCast.push({
           ...bestActor,
           isSceneLead: true,
-          matchType: 'face_match',
-          matchLabel: 'On Screen',
-          confidence: 'high',
+          matchType: dMatch ? (dMatch.isSpeaker ? 'speaking_match' : 'dialogue_match') : 'face_match',
+          matchLabel,
+          confidence: bestScore > 0.72 ? 'high' : 'mid',
           faceProminence: face.area / (w * h),
           faceIndex: i + 1,
         });
@@ -146,7 +159,7 @@ export class WOSFaceEngine {
       };
     }
 
-    return this._fallbackHeuristic(castList, subtitleCue);
+    return this._fallbackHeuristic(castList, subtitleCue, recentDialogue);
   }
 
   /**
@@ -322,46 +335,127 @@ export class WOSFaceEngine {
     return r > 60 && g > 40 && b > 20 && r > g && r > b && Math.abs(r - g) > 12 && r - b > 12;
   }
 
-  _sampleFaceSignature(ctx, x, y, width, height) {
+  _sampleRegion(ctx, x, y, width, height) {
     try {
-      const safeX = Math.max(0, Math.min(ctx.canvas.width - 4, Math.round(x)));
-      const safeY = Math.max(0, Math.min(ctx.canvas.height - 4, Math.round(y)));
-      const safeW = Math.max(4, Math.min(ctx.canvas.width - safeX, Math.round(width)));
-      const safeH = Math.max(4, Math.min(ctx.canvas.height - safeY, Math.round(height)));
+      const safeX = Math.max(0, Math.min(ctx.canvas.width - 2, Math.round(x)));
+      const safeY = Math.max(0, Math.min(ctx.canvas.height - 2, Math.round(y)));
+      const safeW = Math.max(2, Math.min(ctx.canvas.width - safeX, Math.round(width)));
+      const safeH = Math.max(2, Math.min(ctx.canvas.height - safeY, Math.round(height)));
 
       const crop = ctx.getImageData(safeX, safeY, safeW, safeH);
-      let rSum = 0,
-        gSum = 0,
-        bSum = 0;
+      let rSum = 0, gSum = 0, bSum = 0;
       const count = crop.data.length / 4;
+      const step = count > 80 ? 16 : 4;
+      let sampled = 0;
 
-      for (let i = 0; i < crop.data.length; i += 16) {
+      for (let i = 0; i < crop.data.length; i += step) {
         rSum += crop.data[i];
         gSum += crop.data[i + 1];
         bSum += crop.data[i + 2];
+        sampled++;
       }
 
       return {
-        r: rSum / (count / 4 || 1),
-        g: gSum / (count / 4 || 1),
-        b: bSum / (count / 4 || 1),
-        aspect: safeH / (safeW || 1),
+        r: rSum / (sampled || 1),
+        g: gSum / (sampled || 1),
+        b: bSum / (sampled || 1),
       };
     } catch (_) {
-      return { r: 128, g: 100, b: 80, aspect: 1.3 };
+      return { r: 120, g: 100, b: 90 };
     }
   }
 
-  _calculateVisualSimilarity(face, actor, castIndex) {
-    // Prior order score (lead actors receive baseline prominence prior)
-    const billingPrior = 1 / (castIndex + 1);
+  _sampleFaceSignature(ctx, x, y, width, height) {
+    const safeX = Math.max(0, Math.min(ctx.canvas.width - 4, Math.round(x)));
+    const safeY = Math.max(0, Math.min(ctx.canvas.height - 4, Math.round(y)));
+    const safeW = Math.max(4, Math.min(ctx.canvas.width - safeX, Math.round(width)));
+    const safeH = Math.max(4, Math.min(ctx.canvas.height - safeY, Math.round(height)));
 
-    // Profile photo heuristic / signature
-    let visualScore = 0.5 + billingPrior * 0.35;
+    // Hair region: upper 25% of face bounding box
+    const hairH = Math.max(2, Math.round(safeH * 0.25));
+    const hair = this._sampleRegion(ctx, safeX + safeW * 0.2, safeY, safeW * 0.6, hairH);
 
-    // Face prominence bonus (larger faces on screen get higher match weight)
-    const areaBonus = Math.min(0.2, (face.area || 0) / 100000);
-    return visualScore + areaBonus;
+    // Skin/face region: center 45%
+    const skinY = safeY + Math.round(safeH * 0.3);
+    const skinH = Math.max(3, Math.round(safeH * 0.45));
+    const skin = this._sampleRegion(ctx, safeX + safeW * 0.25, skinY, safeW * 0.5, skinH);
+
+    const luma = 0.299 * skin.r + 0.587 * skin.g + 0.114 * skin.b;
+    const aspect = safeH / (safeW || 1);
+
+    return {
+      r: skin.r,
+      g: skin.g,
+      b: skin.b,
+      hair,
+      skin,
+      luma,
+      aspect,
+    };
+  }
+
+  _getActorSignature(actor) {
+    if (!actor) return null;
+    if (this._profileSignatures.has(actor.id)) {
+      return this._profileSignatures.get(actor.id);
+    }
+
+    // Default neutral template
+    const sig = {
+      hair: { r: 50, g: 45, b: 40 },
+      skin: { r: 180, g: 140, b: 120 },
+      aspect: 1.35,
+    };
+
+    if (actor.profileUrl) {
+      const img = new Image();
+      img.crossOrigin = 'anonymous';
+      img.onload = () => {
+        try {
+          const offCanvas = document.createElement('canvas');
+          offCanvas.width = 48;
+          offCanvas.height = 64;
+          const oCtx = offCanvas.getContext('2d', { willReadFrequently: true });
+          oCtx.drawImage(img, 0, 0, 48, 64);
+
+          const loadedHair = this._sampleRegion(oCtx, 12, 2, 24, 14);
+          const loadedSkin = this._sampleRegion(oCtx, 12, 20, 24, 26);
+          this._profileSignatures.set(actor.id, {
+            hair: loadedHair,
+            skin: loadedSkin,
+            aspect: 64 / 48,
+          });
+        } catch (_) {}
+      };
+      img.src = actor.profileUrl;
+    }
+
+    this._profileSignatures.set(actor.id, sig);
+    return sig;
+  }
+
+  _calculateVisualSimilarity(faceSig, actorSig) {
+    if (!faceSig || !actorSig) return 0.5;
+
+    // Hair color & luminance distance
+    const hairDist = Math.hypot(
+      (faceSig.hair?.r || 50) - (actorSig.hair?.r || 50),
+      (faceSig.hair?.g || 45) - (actorSig.hair?.g || 45),
+      (faceSig.hair?.b || 40) - (actorSig.hair?.b || 40)
+    ) / 441.67;
+
+    // Skin tone chrominance & luminance distance
+    const skinDist = Math.hypot(
+      (faceSig.skin?.r || 180) - (actorSig.skin?.r || 180),
+      (faceSig.skin?.g || 140) - (actorSig.skin?.g || 140),
+      (faceSig.skin?.b || 120) - (actorSig.skin?.b || 120)
+    ) / 441.67;
+
+    // Aspect ratio similarity
+    const aspectDiff = Math.min(1, Math.abs((faceSig.aspect || 1.3) - (actorSig.aspect || 1.3)));
+
+    const sim = 1.0 - (hairDist * 0.45 + skinDist * 0.45 + aspectDiff * 0.10);
+    return Math.max(0.1, Math.min(1.0, sim));
   }
 
   _isFrameBlack(ctx, w, h) {
@@ -382,44 +476,41 @@ export class WOSFaceEngine {
     }
   }
 
-  _fallbackHeuristic(castList, subtitleCue) {
-    const cueLower = (subtitleCue || '').toLowerCase();
-    let matches = [];
-    let mode = 'top_billed';
-    let confidence = 'low';
+  _fallbackHeuristic(castList, subtitleCue, recentDialogue = null) {
+    const dialogueMatches = matchCastInDialogue(recentDialogue || subtitleCue, castList);
 
-    if (cueLower) {
-      matches = castList.filter((p) => {
-        const charWords = (p.character || '').toLowerCase().split(/\s+/).filter((w) => w.length >= 3);
-        const nameWords = (p.name || '').toLowerCase().split(/\s+/).filter((w) => w.length >= 3);
-        return charWords.some((w) => cueLower.includes(w)) || nameWords.some((nw) => cueLower.includes(nw));
-      });
+    if (dialogueMatches.length > 0) {
+      // Return the actors who actually appeared and spoke in this scene's dialogue
+      const matched = dialogueMatches.slice(0, 3).map((m) => ({
+        ...m.actor,
+        isSceneLead: true,
+        matchType: 'dialogue_match',
+        matchLabel: m.isSpeaker ? 'Speaking' : 'In Scene',
+        confidence: 'high',
+      }));
 
-      if (matches.length > 0) {
-        mode = 'dialogue_match';
-        confidence = 'mid';
-      }
+      return {
+        hasFaces: false,
+        mode: 'dialogue_match',
+        confidence: 'high',
+        faceCount: matched.length,
+        matches: matched,
+        isDrmBlocked: true,
+      };
     }
 
-    if (matches.length === 0) {
-      matches = castList.slice(0, 3);
-      mode = 'top_billed';
-      confidence = 'low';
-    }
-
-    const defaultLabel = mode === 'dialogue_match' ? 'Speaking' : 'Top Billed';
-
+    // Honest fallback to top billed leads if no characters in scene dialogue
     return {
       hasFaces: false,
-      mode,
-      confidence,
-      faceCount: mode === 'dialogue_match' ? matches.length : 0,
-      matches: matches.map((m) => ({
-        ...m,
+      mode: 'top_billed',
+      confidence: 'low',
+      faceCount: 0,
+      matches: castList.slice(0, 3).map((p) => ({
+        ...p,
         isSceneLead: true,
-        matchType: mode,
-        matchLabel: defaultLabel,
-        confidence,
+        matchType: 'top_billed',
+        matchLabel: 'Top Billed',
+        confidence: 'low',
       })),
       isDrmBlocked: false,
     };
