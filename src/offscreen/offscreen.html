@@ -1,0 +1,17 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>WhosOnScreen – Offscreen Processor</title>
+</head>
+<body>
+  <!-- 
+    This document runs in the background with DOM access.
+    It handles: tab stream capture, face detection, face matching.
+    No visible UI — purely a processing context.
+  -->
+  <canvas id="capture-canvas" style="display:none;"></canvas>
+  <video id="capture-video" style="display:none;" muted></video>
+  <script src="offscreen.js"></script>
+</body>
+</html>
