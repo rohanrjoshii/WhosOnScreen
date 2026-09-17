@@ -65,11 +65,9 @@ export class WOSFaceEngine {
           try {
             this._ctx.drawImage(video, 0, 0, w, h);
             const secondPass = await this._detectFaces(this._canvas, this._ctx, w, h);
-            const validSecond = secondPass.filter((face) => this._passesQualityFilter(face));
-            if (validSecond.length > 0) {
-              // Merge & favor faces consistent across both frames
-              detectedFaces = this._mergeTemporalFaces(detectedFaces, validSecond);
-            }
+            const validSecond = secondPass ? secondPass.filter((face) => this._passesQualityFilter(face)) : [];
+            // Merge & favor faces consistent across both frames (with single high-quality frame override)
+            detectedFaces = this._mergeTemporalFaces(detectedFaces, validSecond);
           } catch (_) {}
         }
       }
@@ -85,8 +83,8 @@ export class WOSFaceEngine {
     }
 
     // 4. Match detected faces against cast members
-    // Sort detected faces by bounding box area (most prominent foreground actor first)
-    detectedFaces.sort((a, b) => b.area - a.area);
+    // Sort detected faces by confidence-weighted area (prominent, temporally verified foreground actors first)
+    detectedFaces.sort((a, b) => ((b.temporalConfidence || 0.85) * b.area) - ((a.temporalConfidence || 0.85) * a.area));
 
     const matchedCast = [];
     const usedCastIds = new Set();
@@ -245,41 +243,44 @@ export class WOSFaceEngine {
   /**
    * Face Quality Filter:
    * Rejects faces that are too small, have extreme aspect ratios (profile view / hands),
-   * or suffer from severe motion blur.
+   * or suffer from severe motion blur. Tuned for dark, side-lit, and chiaroscuro scenes.
    */
   _passesQualityFilter(face) {
     if (!face) return false;
 
-    // Minimum size filter (must be at least 32px x 38px)
-    if (face.width < 32 || face.height < 38) return false;
+    // Minimum size filter (30px x 34px allows for medium-distance shots)
+    if (face.width < 30 || face.height < 34) return false;
 
-    // Aspect ratio filter: human faces are between 1.05 and 1.65
+    // Aspect ratio filter: human faces across angles (frontal, 3/4 profile, chin tilt)
     const aspect = face.height / (face.width || 1);
-    if (aspect < 1.02 || aspect > 1.72) return false;
+    if (aspect < 0.95 || aspect > 1.80) return false;
 
-    // Check color variance / blur if signature available
+    // Check color variance / luminance if signature available
     if (face.signature) {
       const sig = face.signature;
-      // Reject completely monochrome or extreme dark/bright boxes
       const luma = 0.299 * sig.r + 0.587 * sig.g + 0.114 * sig.b;
-      if (luma < 15 || luma > 240) return false;
+      // Permissive threshold (>= 8) ensures dark, noir, and side-lit cinematic scenes aren't rejected
+      if (luma < 8 || luma > 248) return false;
     }
 
     return true;
   }
 
   /**
-   * Multi-frame aggregation:
-   * Matches face detections across two consecutive frames (180ms apart)
-   * to guarantee temporal stability.
+   * Multi-frame aggregation & Temporal Voting:
+   * Matches face detections across two consecutive frames (180ms apart).
+   * Includes a "Single High-Quality Frame" override so rapid camera cuts don't drop clear faces.
    */
   _mergeTemporalFaces(firstPass, secondPass) {
     const merged = [];
 
     for (const f1 of firstPass) {
+      // Determine if f1 is a prominent, high-clarity face in the initial shot
+      const isHighQualitySingle = (f1.width >= 50 && f1.height >= 50) || (f1.area >= 2800);
+
       // Find matching face in second pass by spatial proximity
-      const matchInSecond = secondPass.find(
-        (f2) => Math.abs(f1.x - f2.x) < f1.width * 0.5 && Math.abs(f1.y - f2.y) < f1.height * 0.5
+      const matchInSecond = (secondPass || []).find(
+        (f2) => Math.abs(f1.x - f2.x) < f1.width * 0.55 && Math.abs(f1.y - f2.y) < f1.height * 0.55
       );
 
       if (matchInSecond) {
@@ -289,11 +290,18 @@ export class WOSFaceEngine {
           area: Math.max(f1.area, matchInSecond.area),
           temporalConfidence: 1.0,
         });
-      } else {
-        // Present in at least one frame with valid quality
+      } else if (isHighQualitySingle) {
+        // Fast-cut / short appearance override: large, clear face captured before camera cut
         merged.push({
           ...f1,
-          temporalConfidence: 0.7,
+          temporalConfidence: 0.92,
+          singleFrameOverride: true,
+        });
+      } else {
+        // Smaller single-frame candidate
+        merged.push({
+          ...f1,
+          temporalConfidence: 0.65,
         });
       }
     }

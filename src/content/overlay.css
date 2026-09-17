@@ -25,7 +25,7 @@
   --wos-text-primary:      #ffffff;
   --wos-text-secondary:    rgba(255, 255, 255, 0.65);
   --wos-text-muted:        rgba(255, 255, 255, 0.42);
-  --wos-accent:            #38bdf8;
+  --wos-accent:            rgba(255, 255, 255, 0.85);
   --wos-amber-soft:        rgba(245, 158, 11, 0.15);
   --wos-amber:             #fbbf24;
   --wos-radius:            16px;
@@ -174,8 +174,8 @@
 
 .wos-inline-edit-btn:hover {
   opacity: 1;
-  color: #38bdf8;
-  background: rgba(56, 189, 248, 0.12);
+  color: #ffffff;
+  background: rgba(255, 255, 255, 0.12);
 }
 
 .wos-header-actions {
@@ -306,11 +306,11 @@
 }
 
 .wos-section-title {
-  font-size: 10.5px;
-  font-weight: 700;
-  letter-spacing: 0.14em;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.10em;
   text-transform: uppercase;
-  color: rgba(255, 255, 255, 0.45);
+  color: rgba(255, 255, 255, 0.55);
   display: flex;
   align-items: center;
 }
@@ -318,52 +318,16 @@
 .wos-section-header-wrap {
   display: flex;
   flex-direction: column;
-  gap: 2px;
-}
-
-.wos-live-pulse-dot {
-  width: 6px;
-  height: 6px;
-  border-radius: 50%;
-  background: #38bdf8;
-  box-shadow: 0 0 8px #38bdf8;
-  display: inline-block;
-  margin-right: 7px;
-  animation: wos-pulse 2s infinite ease-in-out;
-}
-
-.wos-dialogue-dot {
-  width: 6px;
-  height: 6px;
-  border-radius: 50%;
-  background: #fbbf24;
-  box-shadow: 0 0 8px #fbbf24;
-  display: inline-block;
-  margin-right: 7px;
-}
-
-.wos-lead-dot {
-  width: 6px;
-  height: 6px;
-  border-radius: 50%;
-  background: rgba(255, 255, 255, 0.35);
-  display: inline-block;
-  margin-right: 7px;
+  gap: 3px;
 }
 
 .wos-section-subtext {
-  font-size: 10.5px;
-  color: var(--wos-text-muted);
+  font-size: 11px;
+  color: rgba(255, 255, 255, 0.38);
   font-weight: 400;
   text-transform: none;
   letter-spacing: 0.01em;
-  margin-left: 13px;
   margin-top: 1px;
-}
-
-@keyframes wos-pulse {
-  0%, 100% { opacity: 1; transform: scale(1); }
-  50% { opacity: 0.5; transform: scale(0.85); }
 }
 
 /* ─── Prime Video Style Actor Card ─── */
@@ -488,32 +452,32 @@
 }
 
 .wos-match-badge {
-  font-size: 9.5px;
-  font-weight: 600;
-  letter-spacing: 0.04em;
-  padding: 2px 7px;
-  border-radius: 10px;
+  font-size: 9px;
+  font-weight: 500;
+  letter-spacing: 0.06em;
+  padding: 2.5px 6.5px;
+  border-radius: 4px;
   white-space: nowrap;
   flex-shrink: 0;
+  text-transform: uppercase;
 }
 
 .wos-match-badge.face_match {
-  background: rgba(56, 189, 248, 0.14);
-  border: 1px solid rgba(56, 189, 248, 0.35);
-  color: #38bdf8;
-  box-shadow: 0 0 8px rgba(56, 189, 248, 0.2);
+  background: rgba(255, 255, 255, 0.10);
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  color: rgba(255, 255, 255, 0.85);
 }
 
 .wos-match-badge.dialogue_match {
-  background: rgba(251, 191, 36, 0.14);
-  border: 1px solid rgba(251, 191, 36, 0.35);
-  color: #fbbf24;
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid rgba(255, 255, 255, 0.10);
+  color: rgba(255, 255, 255, 0.65);
 }
 
 .wos-match-badge.top_billed {
-  background: rgba(255, 255, 255, 0.06);
-  border: 1px solid rgba(255, 255, 255, 0.1);
-  color: rgba(255, 255, 255, 0.55);
+  background: transparent;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  color: rgba(255, 255, 255, 0.45);
 }
 
 .wos-character-row {
@@ -1006,14 +970,14 @@
   width: 52px;
   height: 52px;
   border-radius: 50%;
-  background: linear-gradient(135deg, rgba(56, 189, 248, 0.15) 0%, rgba(56, 189, 248, 0.05) 100%);
-  border: 1px solid rgba(56, 189, 248, 0.25);
+  background: linear-gradient(135deg, rgba(255, 255, 255, 0.10) 0%, rgba(255, 255, 255, 0.04) 100%);
+  border: 1px solid rgba(255, 255, 255, 0.15);
   display: flex;
   align-items: center;
   justify-content: center;
-  color: #38bdf8;
+  color: rgba(255, 255, 255, 0.85);
   margin-bottom: 2px;
-  box-shadow: 0 0 20px rgba(56, 189, 248, 0.18);
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.4);
 }
 
 .wos-discovery-title {
@@ -1190,8 +1154,8 @@
 }
 
 .wos-pause-toggle.active .wos-toggle-indicator {
-  background: #38bdf8;
-  box-shadow: 0 0 6px #38bdf8;
+  background: #ffffff;
+  box-shadow: 0 0 6px rgba(255, 255, 255, 0.6);
 }
 
 .wos-shortcut-hint {

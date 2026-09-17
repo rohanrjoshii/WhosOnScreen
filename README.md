@@ -27,26 +27,33 @@ With a single hotkey (`Alt+W` / `⌥W`) or by tapping a floating player pill, Wh
   - Hands-free toggle in the footer (`⏸ Auto-Pause: ON/OFF`). When enabled, pausing video automatically brings up the X-Ray panel.
 
 ### 2. 🎯 3-Tier Honest Mode Hierarchy
-We believe truthfulness is paramount. Instead of guessing or falsely claiming who is on screen, WhosOnScreen uses a transparent 3-tier hierarchy:
+We believe truthfulness is paramount. Instead of guessing or falsely claiming who is on screen, WhosOnScreen uses a transparent 3-tier hierarchy that matches Amazon Prime Video X-Ray's honesty:
 
-| Mode | Header Indicator | Badge | Condition |
+| Mode | Header Treatment | Badge | Detection Pipeline |
 | :--- | :--- | :--- | :--- |
-| **High Confidence** | `● In This Scene` (Live Cyan Pulse) | `On Screen` | Face(s) verified on camera via browser face recognition engine. |
-| **Medium Confidence**| `● Speaking in Scene` (Amber Dot) | `Speaking` | Subtitle cue matches active character dialogue. |
-| **Fallback** | `● Main Cast & Leads` (Slate Dot) | `Lead` | Wide shots, scenery, or DRM canvas lock — honest explanatory note displayed. |
+| **High Confidence** | `IN THIS SCENE` | `ON SCREEN` (Frosted) | Face(s) verified on camera with temporal voting & single-frame cut preservation. |
+| **Medium Confidence**| `SPEAKING IN SCENE` | `SPEAKING` (Subdued) | Subtitle cue matches active character dialogue when faces are obscured. |
+| **Fallback** | `MAIN CAST & LEADS` | `LEAD` (Outline) | Wide shots, scenery, or DRM canvas lock — honest explanatory note displayed. |
 
-### 3. 🎨 Native Prime Video X-Ray Aesthetics
+### 3. 🧠 Robust Face Detection Pipeline
+- **Quality Filter Tuned for Cinema**: Aspect ratio checks (`0.95–1.80`) and permissive luminance thresholds (`luma ≥ 8`) ensure dark, side-lit, chiaroscuro, and noir streaming scenes (*The Night Manager, Shōgun, The Batman*) aren't falsely rejected.
+- **Multi-Frame Temporal Voting**: Evaluates candidate faces across consecutive frames (180ms apart) to confirm spatial consistency and filter transient artifacts.
+- **Single High-Quality Frame Override**: If a clear foreground face appears right before a fast cut or shot transition, it is preserved instead of being penalized by the next frame.
+- **Bounded Cast Matching**: Prioritizes top-billed characters and weights prominent foreground faces first.
+
+### 4. 🎨 Native Prime Video X-Ray Aesthetics
+- **Restrained Player Chrome**: No neon AI gimmicks, glowing dots, or distracting animations. Clean, tracked uppercase typography and frosted monochrome tags.
 - **Cinematic Dark Glass**: Dual-stop linear gradient (`rgba(16, 18, 28, 0.88)` to `rgba(10, 11, 16, 0.93)`) with 32px backdrop blur and 200% saturation filter.
 - **Docked Right Edge**: 375px wide panel positioned cleanly at `right: 24px, top: 24px, bottom: 88px` with clearance for scrub bars.
 - **High-Clarity Headshots**: 64px circular portraits with ambient rim border, 17px bold typography, and `-2px` hover lift.
 - **Actor Detail View**: Tap any actor card to explore large 92px×124px portraits, birth place, age, child actor tags, frosted biography, and known-for filmography grid.
 
-### 4. 🚀 Sub-5ms Instant Second Opens
+### 5. 🚀 Sub-5ms Instant Second Opens
 - **Two-Tier L1/L2 Cache Architecture**:
   - **L1 In-Memory `Map`**: Instant synchronous `0ms` response for previously loaded titles, cast, and actor profiles.
   - **L2 `chrome.storage.local`**: Persistent cache across browser restarts with 7-day TTL.
 
-### 5. 🌐 Universal Compatibility
+### 6. 🌐 Universal Compatibility
 - **Supported Platforms**: Netflix, JioHotstar, Amazon Prime Video, YouTube, Vimeo, and custom HTML5 web players.
 - **Unknown Sites & Local Video Fallback**: Shows an interactive **Universal Discovery Card** with 1-tap quick pills (*Panchayat, The Night Manager, Mirzapur, Shōgun, Stranger Things, Animal*) to immediately load cast details.
 - **1-Click Title Correction**: Misidentified title? Click the inline pencil icon `[✎]` in the header to instantly search or adjust the title.

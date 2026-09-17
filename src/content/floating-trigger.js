@@ -75,32 +75,23 @@ export class WOSFloatingTrigger {
       .wos-float-pill:hover {
         opacity: 1;
         background: linear-gradient(145deg, rgba(28, 32, 48, 0.95) 0%, rgba(14, 16, 24, 0.98) 100%);
-        border-color: rgba(56, 189, 248, 0.4);
+        border-color: rgba(255, 255, 255, 0.28);
         box-shadow:
           inset 0 1px 0 0 rgba(255, 255, 255, 0.25),
-          0 0 16px rgba(56, 189, 248, 0.35),
           0 10px 28px rgba(0, 0, 0, 0.65);
-        transform: translateY(-1px) scale(1.03);
+        transform: translateY(-1px) scale(1.02);
       }
       .wos-float-pill:active {
         transform: translateY(0) scale(0.98);
       }
       .wos-float-icon {
-        color: #38bdf8;
+        color: rgba(255, 255, 255, 0.82);
         display: flex;
         align-items: center;
       }
       .wos-float-text {
         color: #ffffff;
         text-shadow: 0 1px 2px rgba(0, 0, 0, 0.5);
-      }
-      .wos-float-dot {
-        width: 5px;
-        height: 5px;
-        border-radius: 50%;
-        background: #4ade80;
-        box-shadow: 0 0 6px #4ade80;
-        margin-left: 2px;
       }
     `;
     this.shadow.appendChild(style);
@@ -111,7 +102,6 @@ export class WOSFloatingTrigger {
     this.btn.innerHTML = `
       <span class="wos-float-icon">${APERTURE_ICON_SVG}</span>
       <span class="wos-float-text">X-Ray</span>
-      <span class="wos-float-dot"></span>
     `;
 
     this.btn.addEventListener('click', (e) => {

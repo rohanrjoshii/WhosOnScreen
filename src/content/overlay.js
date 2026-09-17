@@ -430,20 +430,21 @@ export class WOSOverlay {
       if (this._mode === 'face_detected') {
         header.innerHTML = `
           <div class="wos-section-header-wrap">
-            <span class="wos-section-title"><span class="wos-live-pulse-dot"></span>In This Scene</span>
+            <span class="wos-section-title">In This Scene</span>
           </div>
         `;
       } else if (this._mode === 'dialogue_match') {
         header.innerHTML = `
           <div class="wos-section-header-wrap">
-            <span class="wos-section-title"><span class="wos-dialogue-dot"></span>Speaking in Scene</span>
+            <span class="wos-section-title">Speaking in Scene</span>
+            <span class="wos-section-subtext">Identified from dialogue captions</span>
           </div>
         `;
       } else {
         header.innerHTML = `
           <div class="wos-section-header-wrap">
-            <span class="wos-section-title"><span class="wos-lead-dot"></span>Main Cast & Leads</span>
-            <span class="wos-section-subtext">Face tracking unavailable for this shot</span>
+            <span class="wos-section-title">Main Cast & Leads</span>
+            <span class="wos-section-subtext">Scene face scan unavailable</span>
           </div>
         `;
       }
