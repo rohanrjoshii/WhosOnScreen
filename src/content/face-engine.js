@@ -275,8 +275,9 @@ export class WOSFaceEngine {
     const merged = [];
 
     for (const f1 of firstPass) {
-      // Determine if f1 is a prominent, high-clarity face in the initial shot
-      const isHighQualitySingle = (f1.width >= 50 && f1.height >= 50) || (f1.area >= 2800);
+      // Determine if f1 is a prominent face or quick reaction shot in the initial frame
+      const isLargeFace = (f1.width >= 48 && f1.height >= 48) || (f1.area >= 2300);
+      const isReactionCut = (f1.width >= 36 && f1.height >= 40) || (f1.area >= 1500);
 
       // Find matching face in second pass by spatial proximity
       const matchInSecond = (secondPass || []).find(
@@ -290,11 +291,18 @@ export class WOSFaceEngine {
           area: Math.max(f1.area, matchInSecond.area),
           temporalConfidence: 1.0,
         });
-      } else if (isHighQualitySingle) {
-        // Fast-cut / short appearance override: large, clear face captured before camera cut
+      } else if (isLargeFace) {
+        // Fast-cut / short appearance override: prominent face captured before camera cut
         merged.push({
           ...f1,
-          temporalConfidence: 0.92,
+          temporalConfidence: 0.94,
+          singleFrameOverride: true,
+        });
+      } else if (isReactionCut) {
+        // Medium reaction cut / dialogue turn shot captured before camera cut
+        merged.push({
+          ...f1,
+          temporalConfidence: 0.88,
           singleFrameOverride: true,
         });
       } else {
