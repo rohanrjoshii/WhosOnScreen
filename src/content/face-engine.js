@@ -1,47 +1,302 @@
 /**
  * WhosOnScreen – Face Engine & Scene Recognition
  *
+ * Two recognition pipelines:
+ *  A) ONNX Pipeline (primary): Sends frame to offscreen document for
+ *     SCRFD detection → ArcFace embedding → cosine similarity matching.
+ *     ~60-100ms per frame, real 512-d neural face embeddings.
+ *  B) Heuristic Pipeline (fallback): Browser-side skin-chroma detection
+ *     with color-signature matching. Used when ONNX is unavailable or
+ *     the offscreen document hasn't loaded yet.
+ *
  * Responsibilities:
  *  1. Capture current active video frame onto an in-memory canvas
- *  2. Face Detection: Native window.FaceDetector (Shape Detection API) with fallback
- *     to high-speed skin-chroma & facial luminance variance scanner
- *  3. Face Recognition: Computes facial visual signatures and matches against cast profiles
- *  4. Group Shot & Framing Awareness:
- *     - Close-up (1 face) -> returns exactly 1 actor
- *     - Two-shot dialogue (2 faces) -> returns 2 actors
- *     - Group shot (3-5 faces) -> returns all prominent detected cast members
- *     - Scenery / No Faces (0 faces) -> returns hasFaces: false
- *  5. Subtitle Cue: Used strictly as an assist (+0.15 score boost) to resolve ties,
- *     never as the primary decider.
+ *  2. Route to ONNX or heuristic pipeline
+ *  3. Face quality filtering (aspect ratio, size, luminance)
+ *  4. Multi-frame temporal voting (heuristic only)
+ *  5. Subtitle cue assist for tie-breaking
  */
 
 import { matchCastInDialogue } from '../shared/character-matcher.js';
+import { MSG } from '../shared/messages.js';
+import { getElementViewportRect } from './video-tracker.js';
 
 export class WOSFaceEngine {
   constructor() {
     this._canvas = document.createElement('canvas');
     this._ctx = this._canvas.getContext('2d', { willReadFrequently: true });
     this._profileSignatures = new Map();
+    this._profileLoading = new Set();
+    this._analysisInFlight = null;
+    this._frameRequestCounter = 0;
+    this._onnxAvailable = false;
+    this._onnxChecked = false;
   }
 
   /**
    * Run face detection and recognition on the current video frame against the cast.
+   * Tries ONNX first, falls back to heuristic.
+   *
    * @param {HTMLVideoElement} video
    * @param {Array} castList - Full cast from TMDB
    * @param {string|null} subtitleCue - Active caption text
    * @param {string|null} recentDialogue - 45s rolling dialogue text from current scene
    * @returns {Promise<{ hasFaces: boolean, faceCount: number, matches: Array, isDrmBlocked: boolean }>}
    */
-  async analyzeFrame(video, castList = [], subtitleCue = null, recentDialogue = null) {
+  async analyzeFrame(video, castList = [], subtitleCue = null, recentDialogue = null, title = '') {
+    if (this._analysisInFlight) return this._analysisInFlight;
+    this._analysisInFlight = this._analyzeFrameInternal(video, castList, subtitleCue, recentDialogue, title);
+    try {
+      return await this._analysisInFlight;
+    } finally {
+      this._analysisInFlight = null;
+    }
+  }
+
+  async _analyzeFrameInternal(video, castList, subtitleCue, recentDialogue, title) {
     if (!video || !castList || castList.length === 0) {
       return { hasFaces: false, faceCount: 0, matches: [], isDrmBlocked: false };
     }
 
-    // 1. Capture current video frame (downscale to 480px width for < 20ms performance)
+    // Try ONNX pipeline first
+    try {
+      const onnxResult = await this._analyzeFrameONNX(video, castList, subtitleCue, recentDialogue, title);
+      if (onnxResult) return onnxResult;
+    } catch (err) {
+      console.warn('[wos:face-engine] ONNX pipeline error, falling back to heuristic:', err.message);
+    }
+
+    // Fallback to heuristic pipeline
+    return this._analyzeFrameHeuristic(video, castList, subtitleCue, recentDialogue);
+  }
+
+  // ─── ONNX Pipeline ──────────────────────────────────────────────────────────
+
+  /**
+   * ONNX-based face recognition via the offscreen document.
+   * Features universal frame capture: direct canvas with seamless fallback
+   * to captureVisibleTab if the canvas is tainted by CORS/DRM.
+   */
+  async _analyzeFrameONNX(video, castList, subtitleCue, recentDialogue, title = '') {
     const maxWidth = 480;
+    const maxHeight = 360;
+    const vWidth = video.videoWidth || video.clientWidth || 640;
+    const vHeight = video.videoHeight || video.clientHeight || 360;
+    const scale = Math.min(1, maxWidth / vWidth, maxHeight / vHeight);
+    const w = Math.round(vWidth * scale);
+    const h = Math.round(vHeight * scale);
+
+    this._canvas.width = w;
+    this._canvas.height = h;
+
+    let frameImageData = null;
+    let captureMethod = 'direct_canvas';
+
+    // Step 1: Try direct HTML5 <video> canvas draw
+    try {
+      this._ctx.drawImage(video, 0, 0, w, h);
+      // If canvas is tainted by cross-origin video without CORS headers, getImageData throws SecurityError
+      const imgData = this._ctx.getImageData(0, 0, w, h);
+      if (!this._isFrameBlack(this._ctx, w, h)) {
+        frameImageData = imgData;
+      } else {
+        console.warn('[wos:face-engine] Direct canvas frame is black, attempting fallback capture...');
+      }
+    } catch (err) {
+      console.warn('[wos:face-engine] Direct canvas draw failed or tainted by CORS:', err.message);
+    }
+
+    // Step 2: Fallback to chrome.tabs.captureVisibleTab if direct canvas was blocked or blank
+    if (!frameImageData) {
+      try {
+        captureMethod = 'tab_capture_fallback';
+        const rect = getElementViewportRect(video) || video.getBoundingClientRect();
+        const dpr = window.devicePixelRatio || 1;
+
+        if (rect.width > 50 && rect.height > 50) {
+          const res = await chrome.runtime.sendMessage({
+            type: MSG.CAPTURE_VISIBLE_VIDEO,
+            rect: {
+              x: rect.left,
+              y: rect.top,
+              width: rect.width,
+              height: rect.height,
+              dpr,
+            },
+          });
+
+          if (res?.ok && res.dataUrl) {
+            frameImageData = await this._cropDataUrlToImageData(res.dataUrl, rect, dpr, w, h);
+          }
+        }
+      } catch (tabErr) {
+        console.warn('[wos:face-engine] Fallback tab capture failed:', tabErr.message);
+      }
+    }
+
+    if (!frameImageData) {
+      console.warn('[wos:face-engine] Unable to capture usable video frame, falling back to dialogue/leads');
+      return this._fallbackHeuristic(castList, subtitleCue, recentDialogue);
+    }
+
+    console.log(`[wos:face-engine] Frame captured via ${captureMethod} (${w}×${h}). Sending to ONNX detector...`);
+
+    // Send a JSON-safe compressed frame through chrome.runtime messaging.
+    // MV3 runtime messages do not reliably carry transferable ArrayBuffers.
+    try {
+      this._ctx.putImageData(frameImageData, 0, 0);
+      const frameDataUrl = this._canvas.toDataURL('image/jpeg', 0.86);
+      if (!frameDataUrl || frameDataUrl.length > 2_000_000) {
+        throw new Error('Captured frame is too large to send');
+      }
+
+      const previousVisibility = this.host?.style.visibility;
+      const floatingHost = document.querySelector('wos-floating-trigger');
+      const previousFloatingVisibility = floatingHost?.style.visibility;
+      if (this.host) this.host.style.visibility = 'hidden';
+      if (floatingHost) floatingHost.style.visibility = 'hidden';
+      let response;
+      try {
+        response = await chrome.runtime.sendMessage({
+          type: MSG.RECOGNIZE_FACES,
+          frameData: frameDataUrl,
+          frameFormat: 'jpeg-data-url',
+          requestId: `${Date.now()}-${++this._frameRequestCounter}`,
+          width: w,
+          height: h,
+          titleKey: String(title || '').toLowerCase().replace(/[^a-z0-9]+/g, '-'),
+        });
+      } finally {
+        if (this.host) this.host.style.visibility = previousVisibility || '';
+        if (floatingHost) floatingHost.style.visibility = previousFloatingVisibility || '';
+      }
+
+      if (!response?.ok) {
+        console.warn('[wos:face-engine] ONNX recognition response error:', response?.error);
+        return this._fallbackHeuristic(castList, subtitleCue, recentDialogue);
+      }
+
+      console.log(
+        `[wos:face-engine] ONNX recognition complete: ` +
+        `${response.matches?.length || 0} match(es) from ${response.faceCount || 0} face(s) ` +
+        `(indexed cast count: ${response.indexedCastCount || 0})`
+      );
+
+      if (response.allCandidates && response.allCandidates.length > 0) {
+        for (const faceCand of response.allCandidates) {
+          const candStr = faceCand.topCandidates.map(c => `${c.name}: ${c.similarity.toFixed(3)}`).join(', ');
+          console.log(`[wos:face-engine] Face #${faceCand.faceIndex + 1} top similarities: [${candStr}]`);
+        }
+      }
+
+      if (!response.matches || response.matches.length === 0) {
+        console.log('[wos:face-engine] No faces met the similarity threshold against cast index.');
+        return this._fallbackHeuristic(castList, subtitleCue, recentDialogue);
+      }
+
+      // Map ONNX matches back to cast members
+      const dialogueMatches = matchCastInDialogue(recentDialogue || subtitleCue, castList);
+      const dialogueMap = new Map(dialogueMatches.map((m) => [m.actor.id, m]));
+
+      const matchedCast = [];
+      for (const match of response.matches) {
+        const actor = castList.find(p => p.id === match.actorId);
+        if (!actor) continue;
+
+        const dMatch = dialogueMap.get(actor.id);
+        let matchLabel;
+        let matchType;
+
+        if (match.confidence === 'high') {
+          matchLabel = dMatch?.isSpeaker ? 'Speaking' : 'On Screen';
+          matchType = dMatch?.isSpeaker ? 'speaking_match' : 'face_match';
+        } else {
+          matchLabel = dMatch?.isSpeaker ? 'Speaking' : 'Likely';
+          matchType = dMatch ? 'dialogue_match' : 'face_match';
+        }
+
+        matchedCast.push({
+          ...actor,
+          isSceneLead: true,
+          matchType,
+          matchLabel,
+          confidence: match.confidence,
+          similarity: match.similarity,
+          faceIndex: matchedCast.length + 1,
+        });
+      }
+
+      if (matchedCast.length > 0) {
+        const timing = response.timing || {};
+        console.log(
+          `[wos:face-engine] ONNX matched ${matchedCast.length} actor(s) on screen: ` +
+          matchedCast.map(a => `${a.name} (${a.matchLabel}, sim: ${(a.similarity || 0).toFixed(2)})`).join(', ') +
+          ` [${timing.total || '?'}ms]`
+        );
+
+        return {
+          hasFaces: true,
+          mode: 'face_detected',
+          confidence: matchedCast[0].confidence === 'high' ? 'high' : 'mid',
+          faceCount: response.faceCount || matchedCast.length,
+          matches: matchedCast,
+          isDrmBlocked: false,
+          onnx: true,
+        };
+      }
+    } catch (err) {
+      console.warn('[wos:face-engine] ONNX message failed:', err.message);
+    }
+
+    // ONNX didn't produce results — return null to trigger heuristic fallback
+    return null;
+  }
+
+  /**
+   * Crop a full-page dataURL screenshot to the bounding rectangle of the video element.
+   */
+  async _cropDataUrlToImageData(dataUrl, rect, dpr, targetW, targetH) {
+    return new Promise((resolve) => {
+      const img = new Image();
+      img.onload = () => {
+        try {
+          const canvas = document.createElement('canvas');
+          canvas.width = targetW;
+          canvas.height = targetH;
+          const ctx = canvas.getContext('2d');
+
+          const sx = Math.max(0, Math.round(rect.left * dpr));
+          const sy = Math.max(0, Math.round(rect.top * dpr));
+          const ex = Math.min(img.width, Math.round((rect.left + rect.width) * dpr));
+          const ey = Math.min(img.height, Math.round((rect.top + rect.height) * dpr));
+          const sw = Math.max(0, ex - sx);
+          const sh = Math.max(0, ey - sy);
+
+          if (sw <= 10 || sh <= 10) {
+            resolve(null);
+            return;
+          }
+
+          ctx.drawImage(img, sx, sy, sw, sh, 0, 0, targetW, targetH);
+          resolve(ctx.getImageData(0, 0, targetW, targetH));
+        } catch (e) {
+          console.warn('[wos:face-engine] Failed to crop screenshot dataUrl:', e);
+          resolve(null);
+        }
+      };
+      img.onerror = () => resolve(null);
+      img.src = dataUrl;
+    });
+  }
+
+  // ─── Heuristic Pipeline (Original) ──────────────────────────────────────────
+
+  async _analyzeFrameHeuristic(video, castList, subtitleCue, recentDialogue) {
+    const maxWidth = 480;
+    const maxHeight = 360;
     const vWidth = video.videoWidth || 640;
     const vHeight = video.videoHeight || 360;
-    const scale = Math.min(1, maxWidth / vWidth);
+    const scale = Math.min(1, maxWidth / vWidth, maxHeight / vHeight);
     const w = Math.round(vWidth * scale);
     const h = Math.round(vHeight * scale);
 
@@ -112,6 +367,7 @@ export class WOSFaceEngine {
         if (usedCastIds.has(actor.id)) continue;
 
         const actorSig = this._getActorSignature(actor);
+        if (!actorSig) continue;
         const visualSim = this._calculateVisualSimilarity(face.signature, actorSig);
 
         let score = visualSim * 0.55;
@@ -134,14 +390,14 @@ export class WOSFaceEngine {
       if (bestActor) {
         usedCastIds.add(bestActor.id);
         const dMatch = dialogueMap.get(bestActor.id);
-        const matchLabel = dMatch ? (dMatch.isSpeaker ? 'Speaking' : 'In Scene') : 'On Screen';
+        const matchLabel = dMatch?.isSpeaker ? 'Speaking' : 'Likely';
 
         matchedCast.push({
           ...bestActor,
           isSceneLead: true,
-          matchType: dMatch ? (dMatch.isSpeaker ? 'speaking_match' : 'dialogue_match') : 'face_match',
+          matchType: dMatch?.isSpeaker ? 'speaking_match' : 'heuristic_match',
           matchLabel,
-          confidence: bestScore > 0.72 ? 'high' : 'mid',
+          confidence: bestScore > 0.82 ? 'mid' : 'low',
           faceProminence: face.area / (w * h),
           faceIndex: i + 1,
         });
@@ -151,8 +407,8 @@ export class WOSFaceEngine {
     if (matchedCast.length > 0) {
       return {
         hasFaces: true,
-        mode: 'face_detected',
-        confidence: 'high',
+        mode: 'heuristic',
+        confidence: matchedCast.some((actor) => actor.matchLabel === 'Speaking') ? 'mid' : 'low',
         faceCount: candidateFaces.length,
         matches: matchedCast,
         isDrmBlocked: false,
@@ -407,7 +663,8 @@ export class WOSFaceEngine {
       aspect: 1.35,
     };
 
-    if (actor.profileUrl) {
+    if (actor.profileUrl && !this._profileLoading.has(actor.id)) {
+      this._profileLoading.add(actor.id);
       const img = new Image();
       img.crossOrigin = 'anonymous';
       img.onload = () => {
@@ -425,12 +682,21 @@ export class WOSFaceEngine {
             skin: loadedSkin,
             aspect: 64 / 48,
           });
-        } catch (_) {}
+        } catch (_) {
+        } finally {
+          this._profileLoading.delete(actor.id);
+        }
       };
+      img.onerror = () => this._profileLoading.delete(actor.id);
       img.src = actor.profileUrl;
+      // Do not cache the neutral placeholder: doing so makes the first scan
+      // choose the first-billed actor for every detected face.
+      return null;
     }
 
-    this._profileSignatures.set(actor.id, sig);
+    if (!actor.profileUrl) {
+      return null;
+    }
     return sig;
   }
 
@@ -486,13 +752,13 @@ export class WOSFaceEngine {
         isSceneLead: true,
         matchType: 'dialogue_match',
         matchLabel: m.isSpeaker ? 'Speaking' : 'In Scene',
-        confidence: 'high',
+        confidence: m.isSpeaker ? 'high' : 'mid',
       }));
 
       return {
         hasFaces: false,
         mode: 'dialogue_match',
-        confidence: 'high',
+        confidence: matched.some((actor) => actor.matchLabel === 'Speaking') ? 'high' : 'mid',
         faceCount: matched.length,
         matches: matched,
         isDrmBlocked: true,

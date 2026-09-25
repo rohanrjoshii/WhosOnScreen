@@ -9,6 +9,7 @@
 import { netflixDetector } from './netflix.js';
 import { primeDetector } from './prime.js';
 import { hotstarDetector } from './hotstar.js';
+import { youtubeDetector } from './youtube.js';
 import { genericDetector } from './generic.js';
 
 // Ordered from most specific to least. Generic is always last.
@@ -16,7 +17,7 @@ const detectors = [
   netflixDetector,
   primeDetector,
   hotstarDetector,
-  // Future: youtubeDetector, disneyDetector
+  youtubeDetector,
   genericDetector,
 ];
 

@@ -10,7 +10,7 @@ export const netflixDetector = {
   name: 'netflix',
 
   matches(hostname) {
-    return hostname.endsWith('netflix.com');
+    return hostname === 'netflix.com' || hostname.endsWith('.netflix.com');
   },
 
   detect() {

@@ -1,13 +1,27 @@
 {
   "name": "whos-on-screen",
-  "version": "0.1.0",
+  "version": "0.3.0",
   "private": true,
   "description": "Instantly identify actors on screen while watching movies and TV shows.",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/rohanrjoshii/WhosOnScreen.git"
+  },
+  "homepage": "https://github.com/rohanrjoshii/WhosOnScreen#readme",
+  "bugs": "https://github.com/rohanrjoshii/WhosOnScreen/issues",
+  "keywords": ["chrome-extension", "manifest-v3", "onnx", "face-recognition", "tmdb", "x-ray"],
+  "engines": { "node": ">=18" },
   "scripts": {
     "build": "node scripts/build.js",
-    "dev": "node scripts/build.js --watch"
+    "dev": "node scripts/build.js --watch",
+    "check": "node scripts/check.js",
+    "test": "node scripts/test.js",
+    "download-models": "bash scripts/download-models.sh"
   },
   "devDependencies": {
     "esbuild": "^0.25.0"
+  },
+  "dependencies": {
+    "onnxruntime-web": "^1.21.0"
   }
 }

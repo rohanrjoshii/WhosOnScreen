@@ -1,4 +1,18 @@
+# Dependencies
 node_modules/
+
+# Local ONNX binaries (fetched via `npm run download-models`, SHA-256 verified)
+models/
+
+# Built extension binaries / large generated assets (rebuilt via `npm run build`)
+dist/models/
+dist/*.mjs
+dist/*.wasm
+
+# OS / editor / logs
 .DS_Store
 *.log
 .env
+coverage/
+.vscode/
+.idea/

@@ -15,9 +15,9 @@ export const hotstarDetector = {
 
   matches(hostname) {
     return (
-      hostname.includes('jiohotstar.com') ||
-      hostname.includes('hotstar.com') ||
-      hostname.includes('jiocinema.com')
+      hostname === 'jiohotstar.com' || hostname.endsWith('.jiohotstar.com') ||
+      hostname === 'hotstar.com' || hostname.endsWith('.hotstar.com') ||
+      hostname === 'jiocinema.com' || hostname.endsWith('.jiocinema.com')
     );
   },
 

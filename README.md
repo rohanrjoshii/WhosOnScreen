@@ -1,145 +1,220 @@
 # WhosOnScreen 🎬
 
-> **Instant On-Screen Actor Identification — Prime Video X-Ray for the Entire Web.**
+> **Prime Video X-Ray for the entire web — instantly identify who's on screen.**
 
-[![Manifest V3](https://img.shields.io/badge/Chrome-Manifest%20V3-blue?style=flat-square&logo=googlechrome)](https://developer.chrome.com/docs/extensions/mv3/intro/)
+[![Chrome MV3](https://img.shields.io/badge/Chrome-Manifest%20V3-blue?style=flat-square&logo=googlechrome)](https://developer.chrome.com/docs/extensions/mv3/intro/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-emerald?style=flat-square)](LICENSE)
-[![Version](https://img.shields.io/badge/Version-0.2.0-purple?style=flat-square)](manifest.json)
+[![Version](https://img.shields.io/badge/Version-0.3.0-purple?style=flat-square)](manifest.json)
+[![Chrome 120+](https://img.shields.io/badge/Chrome-120%2B-orange?style=flat-square)](https://www.google.com/chrome/)
+[![PRs welcome](https://img.shields.io/badge/PRs-welcome-brightgreen?style=flat-square)](https://github.com/rohanrjoshii/WhosOnScreen/pulls)
 
-**WhosOnScreen** is a lightweight, high-performance Chrome extension that brings the magic of Amazon Prime Video's **X-Ray** to **Netflix, JioHotstar, YouTube, Prime Video, and any HTML5 video player on the web**. 
+**WhosOnScreen** is a lightweight Chrome (MV3) extension that brings **X-Ray-style actor identification** to **Netflix, JioHotstar, Prime Video, YouTube, and any HTML5 video player**.
 
-With a single hotkey (`Alt+W` / `⌥W`) or by tapping a floating player pill, WhosOnScreen instantly scans the video frame, identifies the actors on screen, and renders a native, translucent player panel with rich filmographies, character roles, biographies, and direct IMDb/TMDB links.
+Press `Alt+W` / `⌥W` or tap the floating **X-Ray** pill → the current frame is scanned, faces are matched against the title's cast, and a native dark-glass panel shows who's in the scene, with bios, filmography, and IMDb/TMDB links.
 
 ---
 
-## ✨ Key Features
+## Table of contents
 
-### 1. ⚡ Effortless Triggers (Zero Friction)
-- **Universal Hotkeys (No Mouse Needed)**:
-  - **Windows / Linux**: `Alt + W`
-  - **Mac**: `⌥W` (Option + W) or `⇧⌘W` (Cmd + Shift + W)
-  - Registered via capture-phase listeners on `<all_urls>` so streaming players never swallow or block the keystroke.
-- **Discreet Floating Player Pill**:
-  - Automatically floats in the upper corner of any active video player (`≥340px × 190px`).
-  - Auto-fades after 3.5s of mouse idle during playback and reappears smoothly on mouse movement.
-  - Isolated inside a closed Shadow DOM so host page CSS never distorts it.
-- **Auto-Open on Pause (Optional)**:
-  - Hands-free toggle in the footer (`⏸ Auto-Pause: ON/OFF`). When enabled, pausing video automatically brings up the X-Ray panel.
+- [Demo](#-demo)
+- [Features](#-features)
+- [How it works](#-how-it-works)
+- [Project structure](#-project-structure)
+- [Getting started](#-getting-started)
+- [Settings](#-settings)
+- [Privacy](#-privacy)
+- [Scripts](#-scripts)
+- [What's new in v0.3.0](#-whats-new-in-v030)
+- [Limitations](#-limitations--drm-notes)
+- [Contributing](#-contributing)
+- [License](#-license)
 
-### 2. 🎯 3-Tier Honest Mode Hierarchy
-We believe truthfulness is paramount. Instead of guessing or falsely claiming who is on screen, WhosOnScreen uses a transparent 3-tier hierarchy that matches Amazon Prime Video X-Ray's honesty:
+---
 
-| Mode | Header Treatment | Badge | Detection Pipeline |
+## 🎥 Demo
+
+> Tip for contributors: drop a 10–20s screen recording here (`docs/demo.gif`) showing `Alt+W` on a trailer + the panel + a song ID.
+
+```
+Alt+W  →  frame scan  →  “In This Scene”  →  actor detail  →  “What song is this?”
+```
+
+---
+
+## ✨ Features
+
+### ⚡ Zero-friction triggers
+- **Hotkeys**: `Alt + W` (Win/Linux), `⌥W` / `⇧⌘W` (Mac) via capture-phase listeners
+- **Floating X-Ray pill**: docks to the active player (`≥280×150`), auto-fades after 2.2s idle, re-anchors on scroll/resize, works in fullscreen
+- **Auto-open on pause** (optional footer toggle): opens X-Ray when a long video is paused
+
+### 🎯 Honest confidence tiers
+| Tier | Header | Badge | Meaning |
 | :--- | :--- | :--- | :--- |
-| **High Confidence** | `IN THIS SCENE` | `ON SCREEN` (Frosted) | Face(s) verified on camera with temporal voting & single-frame cut preservation. |
-| **Medium Confidence**| `SPEAKING IN SCENE` | `SPEAKING` (Subdued) | Subtitle cue matches active character dialogue when faces are obscured. |
-| **Fallback** | `MAIN CAST & LEADS` | `LEAD` (Outline) | Wide shots, scenery, or DRM canvas lock — honest explanatory note displayed. |
+| **High** | `IN THIS SCENE` | `ON SCREEN` | Face matched on camera (SCRFD + ArcFace, similarity + margin) |
+| **Medium** | `SPEAKING IN SCENE` | `SPEAKING` / `IN SCENE` | Character matched from dialogue captions |
+| **Fallback** | `MAIN CAST & LEADS` | `TOP BILLED` | No visual confirmation — scenery, DRM block, or capture failure |
 
-### 3. 🧠 Robust Face Detection Pipeline
-- **Quality Filter Tuned for Cinema**: Aspect ratio checks (`0.95–1.80`) and permissive luminance thresholds (`luma ≥ 8`) ensure dark, side-lit, chiaroscuro, and noir streaming scenes (*The Night Manager, Shōgun, The Batman*) aren't falsely rejected.
-- **Multi-Frame Temporal Voting**: Evaluates candidate faces across consecutive frames (180ms apart) to confirm spatial consistency and filter transient artifacts.
-- **Single High-Quality Frame Override**: If a clear foreground face appears right before a fast cut or shot transition, it is preserved instead of being penalized by the next frame.
-- **Bounded Cast Matching**: Prioritizes top-billed characters and weights prominent foreground faces first.
+A status line under the header always explains *why* you're seeing a result (e.g. “2 faces matched on camera”, “Matched from dialogue captions”, “Frame access is restricted”).
 
-### 4. 🎨 Native Prime Video X-Ray Aesthetics
-- **Restrained Player Chrome**: No neon AI gimmicks, glowing dots, or distracting animations. Clean, tracked uppercase typography and frosted monochrome tags.
-- **Cinematic Dark Glass**: Dual-stop linear gradient (`rgba(16, 18, 28, 0.88)` to `rgba(10, 11, 16, 0.93)`) with 32px backdrop blur and 200% saturation filter.
-- **Docked Right Edge**: 375px wide panel positioned cleanly at `right: 24px, top: 24px, bottom: 88px` with clearance for scrub bars.
-- **High-Clarity Headshots**: 64px circular portraits with ambient rim border, 17px bold typography, and `-2px` hover lift.
-- **Actor Detail View**: Tap any actor card to explore large 92px×124px portraits, birth place, age, child actor tags, frosted biography, and known-for filmography grid.
+### 🧠 On-device face pipeline
+- **SCRFD-500M** detection (boxes + 5-point landmarks) → **ArcFace** 112×112 alignment → **512-d embeddings**
+- Runs in an isolated **offscreen document** on the **WASM** backend (no GPU required)
+- Cast index is keyed by **title + TMDB media/episode**, cached in **IndexedDB (14-day TTL)**
+- Frames travel as bounded **480×360 JPEG data URLs** (JSON-safe for MV3 messaging)
+- Duplicate broadcasts are de-duplicated; stale title indexes are rejected
 
-### 5. 🚀 Sub-5ms Instant Second Opens
-- **Two-Tier L1/L2 Cache Architecture**:
-  - **L1 In-Memory `Map`**: Instant synchronous `0ms` response for previously loaded titles, cast, and actor profiles.
-  - **L2 `chrome.storage.local`**: Persistent cache across browser restarts with 7-day TTL.
+### 🎨 Native X-Ray UI
+- Dark-glass right-edge panel, Shadow-DOM isolated, keyboard accessible (`Esc`, focus trap, ARIA live regions)
+- Actor detail view: large portrait, age/birthplace, biography, “Known For”, IMDb/TMDB/Wiki links
+- Inline title correction (`✎`), full-cast view, frame re-scan, responsive + reduced-motion support
 
-### 6. 🌐 Universal Compatibility
-- **Supported Platforms**: Netflix, JioHotstar, Amazon Prime Video, YouTube, Vimeo, and custom HTML5 web players.
-- **Unknown Sites & Local Video Fallback**: Shows an interactive **Universal Discovery Card** with 1-tap quick pills (*Panchayat, The Night Manager, Mirzapur, Shōgun, Stranger Things, Animal*) to immediately load cast details.
-- **1-Click Title Correction**: Misidentified title? Click the inline pencil icon `[✎]` in the header to instantly search or adjust the title.
+### 🎵 Music in the scene
+- “What song is this?” records a short tab sample **only when you press it** and sends it to **AudD**
+- Requires your own **AudD API token** (Settings) — otherwise the feature stays disabled and uploads nothing
+- MediaSession metadata is gated so movie titles aren't mistaken for songs; results are cached per origin + title + timestamp
 
 ---
 
-## 📥 How to Install (Load Unpacked)
+## 🧭 How it works
 
-Since WhosOnScreen is currently open-source in active development, install it in Developer Mode:
-
-1. **Clone or Download** this repository:
-   ```bash
-   git clone https://github.com/rohanrjoshii/WhosOnScreen.git
-   cd WhosOnScreen
-   ```
-
-2. **Install dependencies & build**:
-   ```bash
-   npm install
-   npm run build
-   ```
-   *(This outputs the production bundle to `dist/`)*.
-
-3. **Load into Google Chrome / Chromium**:
-   - Open Chrome and navigate to `chrome://extensions`.
-   - Enable **Developer mode** using the toggle in the top-right corner.
-   - Click the **Load unpacked** button in the top-left corner.
-   - Select the `dist/` directory inside this repository (or the repository root containing `manifest.json`).
-
-4. **Pin the extension** and open any streaming site!
-
----
-
-## ⌨️ Controls & Shortcuts
-
-| Action | Shortcut (Windows/Linux) | Shortcut (Mac) |
-| :--- | :--- | :--- |
-| **Toggle X-Ray Overlay** | `Alt + W` | `⌥W` (Option + W) or `⇧⌘W` |
-| **Close Overlay** | `Escape` | `Escape` |
-| **Inline Title Correction** | Click `[✎]` in header | Click `[✎]` in header |
-| **Toggle Auto-Pause Mode** | Click `⏸ Auto-Pause` in footer | Click `⏸ Auto-Pause` in footer |
-
----
-
-## ⚠️ Current Limitations & DRM Considerations
-
-1. **DRM & Hardware-Accelerated Video (Widevine L1)**:
-   - On some hardware and browser configurations, encrypted video streams (e.g. Netflix, Prime Video) block `<canvas>` pixel reading via Widevine DRM protection.
-   - **How WhosOnScreen handles this**: When canvas reading is restricted, WhosOnScreen gracefully falls back to dialogue speaker matching and top-billed scene leads with honest mode labeling (`Main Cast & Leads`), ensuring the user is never left with a broken or empty screen.
-2. **Extreme Lighting & Oblique Angles**:
-   - Characters shot in heavy shadow, silhouettes, or extreme profile angles (>75° rotation) may not register as frontal face candidates.
-3. **TMDB Coverage**:
-   - Cast metadata, character roles, and profile photos depend on The Movie Database (TMDB) API.
-
----
-
-## 🧠 Advanced Face Recognition Architecture & Roadmap
-
-WhosOnScreen is engineered with modern computer vision principles tailored for browser extensions:
-
-```
-Video Frame (Canvas 480p)
-   │
-   ▼
-Face Quality Filter ─── (Reject tiny faces < 32px, motion blur, non-facial aspect ratios)
-   │
-   ▼
-Multi-Frame Temporal Voting ─── (Sample across 180ms burst to eliminate blinks/flicker)
-   │
-   ▼
-Bounded Cast Matching ─── (Search space strictly constrained to the title's 10–15 cast members)
-   │
-   ▼
-3-Tier Confidence Output:
-   ├── High Confidence (Face Match) ──> "In This Scene" (● On Screen)
-   ├── Mid Confidence (Subtitle Cue) ──> "Speaking in Scene" (● Speaking)
-   └── Fallback (Scene Leads)        ──> "Main Cast & Leads" (● Top Billed)
+```mermaid
+flowchart LR
+    V[Video frame<br/>≤ 480×360 JPEG] --> D[SCRFD-500M<br/>detect + landmarks]
+    D --> A[ArcFace align<br/>112×112 + embed 512-d]
+    A --> M{Match cast index<br/>title + episode key}
+    M -- high --> H[In This Scene<br/>On Screen]
+    M -- weak --> L[Possible match<br/>verify + rescan]
+    D -- no frame / DRM --> S[Dialogue captions<br/>Speaking / In Scene]
+    S -- none --> T[Top Billed<br/>honest fallback]
 ```
 
-### Planned Roadmap:
-- [ ] **ONNX Runtime Web Integration**: Running lightweight AdaFace / ArcFace models in an isolated WebAssembly/WebGPU offscreen document for high-fidelity embedding extraction.
-- [ ] **5-Point Landmark Face Alignment**: Standardizing eye and nose angle alignment before feeding crops to embedding models.
-- [ ] **Local Video Drag-and-Drop**: Support for offline MP4/MKV video files with custom subtitles.
+1. **Content script** detects the title (Netflix / Prime / Hotstar / YouTube / generic), watches the active player, and samples captions.
+2. **Service worker** fetches cast from TMDB, triggers offscreen cast indexing, and keeps per-tab pipeline state.
+3. **Offscreen document** runs ONNX detection + embeddings and matches against the indexed cast.
+4. **Overlay** renders the tier, status note, cast cards, music section, and detail views.
+
+---
+
+## 🗂 Project structure
+
+```
+manifest.json               # MV3 manifest (Chrome 120+, WASM CSP)
+src/
+  background/               # service worker, TMDB client, 2-tier cache
+  content/                  # overlay UI, face engine, trackers, title detectors
+    title-detectors/        # netflix / prime / hotstar / youtube / generic
+  offscreen/                # SCRFD + ArcFace + cast index + audio ID
+  options/                  # settings page (TMDB / AudD / auto-pause)
+  shared/                   # messages, dialogue matcher, music cache
+scripts/
+  build.js                  # esbuild → dist/ (fails loudly if models missing)
+  download-models.sh        # pinned + SHA-256-verified model fetch
+  check.js / test.js        # syntax check + pure-logic smoke tests
+dist/                       # built extension (load this in Chrome)
+icons/  models/             # models/ is local-only, never committed
+```
+
+---
+
+## 📥 Getting started
+
+```bash
+git clone https://github.com/rohanrjoshii/WhosOnScreen.git
+cd WhosOnScreen
+npm install
+npm run download-models   # pinned revisions + SHA-256 check (~15 MB, local only)
+npm run build             # outputs production bundle to dist/
+```
+
+Optional sanity checks:
+
+```bash
+npm run check   # syntax-check all source files
+npm test        # pure-logic smoke tests (matcher + cache normalization)
+```
+
+Load in Chrome:
+
+1. Open `chrome://extensions` → enable **Developer mode**
+2. **Load unpacked** → select the `dist/` folder
+3. Pin the extension, open any streaming site, press `Alt+W` / `⌥W`
+
+> `dist/` JS/HTML is committed for easy loading; large binaries (`*.wasm`, `*.mjs`, `models/`) are intentionally git-ignored and regenerated by `npm run build`.
+
+---
+
+## ⚙️ Settings
+
+Open via the ⚙️ button in the panel header or `chrome://extensions` → **Details** → **Extension options**:
+
+| Setting | Purpose |
+| :--- | :--- |
+| **TMDB API token** | Full catalog search + bios/filmography (v4 Read Access Token recommended; legacy key also works) |
+| **AudD API token** | Enables “What song is this?” (no token → no recording/upload) |
+| **Auto-pause** | Auto-open X-Ray on long-video pause |
+| **Clear cached data** | Purges metadata + music + face-embedding caches |
+
+---
+
+## 🔒 Privacy
+
+- **Local-first**: frames are processed on-device; cast embeddings stay in extension-origin IndexedDB.
+- **Opt-in audio**: tab audio is captured only after you press “What song is this?”, and only if an AudD token is configured.
+- **No analytics**: no tracking, no remote logging.
+- **Keys stay local**: tokens live in `chrome.storage.local` and can be wiped from Settings.
+
+---
+
+## 🧰 Scripts
+
+| Command | What it does |
+| :--- | :--- |
+| `npm run build` | Production build → `dist/` (requires models + ORT assets) |
+| `npm run dev` | Watch mode rebuild |
+| `npm run download-models` | Fetch pinned ONNX models with checksum verification |
+| `npm run check` | Node syntax check (24 source files) |
+| `npm test` | Matcher + cache smoke tests |
+
+---
+
+## 🆕 What's new in v0.3.0
+
+- Hardened ONNX path: JSON-safe JPEG transport, WASM CSP, Chrome 120+ baseline
+- IndexedDB cast cache + title/media/episode index keys + stale-index guards
+- Duplicate-inference suppression across content ↔ worker ↔ offscreen
+- Real Settings page (TMDB / AudD / auto-pause / cache purge)
+- Accessibility: focus trap, ARIA live status, keyboard cards, reduced-motion
+- Music fixes: MediaSession gating, token pre-check, timeouts, no echo loopback
+- Build diet: ships only the WASM runtime it uses (~73 MB → ~29 MB unpacked)
+- Docs + `check`/`test` scripts for contributors
+
+---
+
+## ⚠️ Limitations & DRM notes
+
+- **Widevine/DRM**: encrypted players can block canvas pixel reads → the UI says so and falls back to dialogue/top-billed leads.
+- **Angles/lighting**: extreme profile, silhouette, and heavy occlusion may not register as frontal faces.
+- **TMDB**: cast/bio/poster coverage depends on TMDB; without a token only bundled demo titles resolve fully.
+- **Models**: review upstream model licenses before redistribution.
+
+---
+
+## 🤝 Contributing
+
+PRs welcome! Quick loop:
+
+```bash
+npm install
+npm run download-models
+npm run check && npm test
+npm run build
+```
+
+Please keep PRs focused, update `README` when behavior changes, and avoid committing `models/`, `*.wasm`, or `node_modules/`.
 
 ---
 
 ## 📄 License
 
-Distributed under the MIT License. See `LICENSE` for more information.
+Distributed under the MIT License. See [LICENSE](LICENSE) for more information.

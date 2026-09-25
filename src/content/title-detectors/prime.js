@@ -12,8 +12,8 @@ export const primeDetector = {
   name: 'prime',
 
   matches(hostname) {
-    return hostname.endsWith('primevideo.com') ||
-      (hostname.endsWith('amazon.com') && window.location.pathname.startsWith('/gp/video'));
+    return (hostname === 'primevideo.com' || hostname.endsWith('.primevideo.com')) ||
+      ((hostname === 'amazon.com' || hostname.endsWith('.amazon.com')) && window.location.pathname.startsWith('/gp/video'));
   },
 
   detect() {

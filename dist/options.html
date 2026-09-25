@@ -1,0 +1,85 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>WhosOnScreen Settings</title>
+  <style>
+    :root {
+      color-scheme: dark;
+      font-family: Inter, -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
+      background: #0b0d13;
+      color: #f8fafc;
+    }
+    * { box-sizing: border-box; }
+    body { margin: 0; min-width: 320px; background: radial-gradient(circle at top right, #1b2132, #0b0d13 48%); }
+    main { width: min(720px, calc(100% - 32px)); margin: 0 auto; padding: 48px 0 56px; }
+    header { margin-bottom: 28px; }
+    h1 { margin: 0 0 8px; font-size: 28px; letter-spacing: -0.03em; }
+    h2 { margin: 0 0 6px; font-size: 16px; }
+    p { margin: 0; color: #aeb8c9; font-size: 13px; line-height: 1.55; }
+    .eyebrow { color: #8fa0ba; font-size: 11px; font-weight: 700; letter-spacing: .12em; text-transform: uppercase; }
+    section { margin-top: 16px; padding: 20px; border: 1px solid rgba(255,255,255,.09); border-radius: 14px; background: rgba(255,255,255,.045); }
+    label { display: block; margin-top: 16px; color: #e5eaf2; font-size: 12px; font-weight: 600; }
+    input[type="password"], input[type="text"] { width: 100%; margin-top: 7px; padding: 10px 12px; border: 1px solid rgba(255,255,255,.14); border-radius: 8px; background: rgba(0,0,0,.22); color: #fff; font: inherit; font-size: 13px; }
+    input:focus { outline: 2px solid #93c5fd; outline-offset: 1px; border-color: #60a5fa; }
+    .hint { display: block; margin-top: 6px; color: #7f8ba0; font-size: 11px; font-weight: 400; line-height: 1.45; }
+    .switch-row { display: flex; align-items: center; gap: 10px; margin-top: 14px; }
+    .switch-row input { width: 17px; height: 17px; accent-color: #60a5fa; }
+    .switch-row label { margin: 0; }
+    .actions { display: flex; flex-wrap: wrap; gap: 9px; margin-top: 22px; }
+    button { border: 1px solid rgba(255,255,255,.14); border-radius: 8px; padding: 9px 14px; background: rgba(255,255,255,.08); color: #fff; font: inherit; font-size: 12px; cursor: pointer; }
+    button.primary { border-color: rgba(96,165,250,.5); background: #1d4ed8; }
+    button:hover { background: rgba(255,255,255,.14); }
+    button.primary:hover { background: #2563eb; }
+    button:focus-visible { outline: 2px solid #fff; outline-offset: 2px; }
+    #status { min-height: 20px; margin-top: 14px; color: #86efac; font-size: 12px; }
+    .privacy { margin-top: 26px; padding: 14px 16px; border-left: 3px solid #60a5fa; background: rgba(96,165,250,.08); color: #aeb8c9; font-size: 12px; line-height: 1.55; }
+    @media (max-width: 520px) { main { padding-top: 28px; } h1 { font-size: 24px; } section { padding: 16px; } }
+  </style>
+</head>
+<body>
+  <main>
+    <header>
+      <div class="eyebrow">WhosOnScreen</div>
+      <h1>Settings</h1>
+      <p>Keep your credentials local to this browser and tune the X-Ray experience.</p>
+    </header>
+
+    <section aria-labelledby="metadata-heading">
+      <h2 id="metadata-heading">Title metadata</h2>
+      <p>TMDB powers cast lookup, biographies, and filmography. Paste a TMDB API Read Access Token.</p>
+      <label for="tmdb-key">TMDB API token
+        <input id="tmdb-key" type="password" autocomplete="off" spellcheck="false" placeholder="Paste token here">
+        <span class="hint">A v4 Read Access Token is recommended (a legacy API key also works). Stored only in Chrome extension local storage. Leave blank to use the bundled demo titles.</span>
+      </label>
+    </section>
+
+    <section aria-labelledby="music-heading">
+      <h2 id="music-heading">Music identification</h2>
+      <p>Song identification records a short sample only after you press “What song is this?”.</p>
+      <label for="audd-key">AudD API token
+        <input id="audd-key" type="password" autocomplete="off" spellcheck="false" placeholder="Optional for local testing">
+        <span class="hint">The sample is sent to AudD for recognition and is not stored by WhosOnScreen.</span>
+      </label>
+    </section>
+
+    <section aria-labelledby="behavior-heading">
+      <h2 id="behavior-heading">Playback</h2>
+      <div class="switch-row">
+        <input id="auto-pause" type="checkbox">
+        <label for="auto-pause">Open X-Ray automatically when a long video is paused</label>
+      </div>
+    </section>
+
+    <div class="actions">
+      <button class="primary" id="save" type="button">Save settings</button>
+      <button id="clear-cache" type="button">Clear cached data</button>
+    </div>
+    <div id="status" role="status" aria-live="polite"></div>
+
+    <div class="privacy"><strong>Privacy:</strong> video frames are processed locally by the extension. The optional song-identification action sends a short audio sample to AudD; no audio is sent until you explicitly request identification.</div>
+  </main>
+  <script src="options.js"></script>
+</body>
+</html>

@@ -7,7 +7,7 @@
  */
 
 // Common words that frequently appear in English/international subtitles
-// and happen to share spellings with short character names or titles.
+// Common words and generic role titles that frequently appear in English/international subtitles.
 // These MUST NEVER trigger a character match on their own!
 const COMMON_WORD_BLACKLIST = new Set([
   'the', 'and', 'with', 'young', 'child', 'boy', 'girl', 'man', 'woman',
@@ -21,7 +21,18 @@ const COMMON_WORD_BLACKLIST = new Set([
   'over', 'under', 'into', 'from', 'than', 'more', 'some', 'them', 'these',
   'doctor', 'officer', 'agent', 'detective', 'captain', 'sergeant', 'judge',
   'mr', 'mrs', 'ms', 'dr', 'prof', 'jr', 'sr', 'uncredited', 'voice',
+  // Generic background roles that often appear in casual conversation
+  'student', 'students', 'teacher', 'professor', 'reporter', 'journalist',
+  'waiter', 'waitress', 'driver', 'bartender', 'guard', 'soldier', 'nurse',
+  'patient', 'officer', 'police', 'assistant', 'clerk', 'cashier', 'guest',
+  'host', 'announcer', 'pilot', 'passenger', 'customer', 'lawyer', 'priest',
+  'worker', 'bystander', 'extra', 'intern', 'thug', 'goon', 'bodyguard',
+  'crew', 'staff', 'fan', 'stranger', 'neighbor', 'father', 'mother',
+  'brother', 'sister', 'friend', 'someone', 'people', 'person',
 ]);
+
+// Generic background character patterns (e.g. "Student #1", "MIT Student", "Man in Bar")
+const GENERIC_ROLE_REGEX = /\b(student|waiter|waitress|guard|soldier|cop|officer|reporter|driver|passenger|clerk|bystander|customer|thug|extra|patron|intern|guest)\b/i;
 
 function escapeRegex(str) {
   return str.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
@@ -39,6 +50,10 @@ export function extractCharacterAliases(characterString, actorName = '') {
   const raw = (characterString || '').toLowerCase();
   const aliases = new Set();
 
+  // If the character is a generic background role (e.g. "MIT Student #1", "Reporter #2"),
+  // only keep it as an explicit speaker tag candidate, never split into generic words
+  const isGenericRole = GENERIC_ROLE_REGEX.test(raw) || /#\d+/.test(raw);
+
   // Remove parenthetical noise like (uncredited) or (voice)
   const cleaned = raw.replace(/\((uncredited|voice|archive footage|stunt double)\)/gi, '').trim();
 
@@ -49,21 +64,21 @@ export function extractCharacterAliases(characterString, actorName = '') {
     .filter((s) => s.length >= 2);
 
   for (const seg of segments) {
-    // Add multi-word alias if valid
     const cleanSeg = seg.replace(/[^a-z0-9\s]/g, ' ').replace(/\s+/g, ' ').trim();
     if (cleanSeg.length >= 3 && !COMMON_WORD_BLACKLIST.has(cleanSeg)) {
       aliases.add(cleanSeg);
-      // Hindi/colloquial compound handling: "pradhan ji" -> "pradhanji", "sachiv ji" -> "sachivji"
       if (cleanSeg.includes(' ji')) {
         aliases.add(cleanSeg.replace(/\s+ji/g, 'ji'));
       }
     }
 
-    // Split into individual words
-    const words = cleanSeg.split(/\s+/).filter((w) => w.length >= 3);
-    for (const w of words) {
-      if (!COMMON_WORD_BLACKLIST.has(w) && w.length >= 3) {
-        aliases.add(w);
+    // Do NOT split generic roles into single words (prevents "student" from matching "MIT Student")
+    if (!isGenericRole) {
+      const words = cleanSeg.split(/\s+/).filter((w) => w.length >= 3);
+      for (const w of words) {
+        if (!COMMON_WORD_BLACKLIST.has(w) && w.length >= 3) {
+          aliases.add(w);
+        }
       }
     }
   }
@@ -106,6 +121,10 @@ export function matchCastInDialogue(dialogueText, castList = []) {
   for (const m of speakerColonMatches) {
     speakerTags.add(m[1].trim().toLowerCase());
   }
+  const speakerDashMatches = text.matchAll(/(?:^|\n)\s*[-–]\s*([A-Za-z0-9\s.]{2,24})(?=\s*[:\-–])/g);
+  for (const m of speakerDashMatches) {
+    speakerTags.add(m[1].trim().toLowerCase());
+  }
   const bracketMatches = text.matchAll(/[\[(]([A-Za-z0-9\s.]{2,24})[\])]/g);
   for (const m of bracketMatches) {
     speakerTags.add(m[1].trim().toLowerCase());
@@ -138,7 +157,9 @@ export function matchCastInDialogue(dialogueText, castList = []) {
       if (wordRegex.test(textLower)) {
         // Multi-word alias matches get higher confidence than single words
         const isMultiWord = alias.includes(' ');
-        const score = isMultiWord ? 80 : 65;
+        // A single common word in caption text is not evidence of presence.
+        // Require an explicit speaker tag or a multi-word character phrase.
+        const score = isMultiWord ? 80 : 55;
 
         if (score > bestScore) {
           bestScore = score;

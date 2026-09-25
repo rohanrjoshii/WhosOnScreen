@@ -433,9 +433,22 @@ export class TMDBClient {
     return DEFAULT_KEY;
   }
 
+  invalidateMemory() {
+    this._cachedKey = null;
+    this._titleCache.clear();
+    this._personCache.clear();
+  }
+
+  clearPersistentCache() {
+    return persistentCache.clear();
+  }
+
   async setApiKey(key) {
     const cleaned = (key || '').trim();
     this._cachedKey = cleaned;
+    this._titleCache.clear();
+    this._personCache.clear();
+    await persistentCache.clear();
     await chrome.storage.local.set({ tmdbApiKey: cleaned });
     return true;
   }
@@ -667,9 +680,10 @@ export class TMDBClient {
   }
 
   _matchDemoTitle(rawTitle) {
-    const lower = rawTitle.toLowerCase();
+    const lower = String(rawTitle || '').toLowerCase().trim();
+    if (lower.length < 4) return null;
     for (const [k, v] of Object.entries(DEMO_TITLES)) {
-      if (lower.includes(k) || k.includes(lower)) {
+      if (lower === k || lower.includes(k) || (lower.length >= 6 && k.includes(lower))) {
         return JSON.parse(JSON.stringify(v));
       }
     }
@@ -707,12 +721,25 @@ export class TMDBClient {
 
   async _get(path, params = {}, apiKey) {
     const url = new URL(`${BASE}${path}`);
-    url.searchParams.set('api_key', apiKey);
+    const isBearerToken = typeof apiKey === 'string' && apiKey.startsWith('eyJ');
+    if (!isBearerToken) {
+      url.searchParams.set('api_key', apiKey);
+    }
     for (const [k, v] of Object.entries(params)) {
       url.searchParams.set(k, v);
     }
 
-    const res = await fetch(url.toString());
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 10_000);
+    let res;
+    try {
+      res = await fetch(url.toString(), {
+        headers: isBearerToken ? { Authorization: `Bearer ${apiKey}` } : undefined,
+        signal: controller.signal,
+      });
+    } finally {
+      clearTimeout(timeoutId);
+    }
     if (!res.ok) {
       throw new Error(`TMDB HTTP ${res.status}: ${res.statusText}`);
     }
