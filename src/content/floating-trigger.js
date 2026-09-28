@@ -52,51 +52,53 @@ export class WOSFloatingTrigger {
       .wos-float-pill {
         display: inline-flex;
         align-items: center;
-        gap: 6px;
-        padding: 7px 14px 7px 11px;
-        border-radius: 20px;
-        background: linear-gradient(145deg, rgba(16, 18, 28, 0.85) 0%, rgba(10, 11, 16, 0.92) 100%);
-        backdrop-filter: blur(20px) saturate(180%);
-        -webkit-backdrop-filter: blur(20px) saturate(180%);
-        border: 1px solid rgba(255, 255, 255, 0.12);
+        gap: 7px;
+        padding: 8px 16px 8px 12px;
+        border-radius: 24px;
+        background: rgba(8, 10, 18, 0.92);
+        backdrop-filter: blur(40px) saturate(180%);
+        -webkit-backdrop-filter: blur(40px) saturate(180%);
+        border: 1px solid rgba(129, 140, 248, 0.15);
         box-shadow:
-          inset 0 1px 0 0 rgba(255, 255, 255, 0.15),
-          0 8px 24px rgba(0, 0, 0, 0.55);
-        color: #ffffff;
-        font-size: 11.5px;
-        font-weight: 600;
-        letter-spacing: 0.04em;
+          0 0 0 1px rgba(255, 255, 255, 0.03) inset,
+          0 8px 24px rgba(0, 0, 0, 0.5),
+          0 0 1px 0 rgba(129, 140, 248, 0.2);
+        color: #f1f5f9;
+        font-size: 12px;
+        font-weight: 700;
+        letter-spacing: 0.02em;
         cursor: pointer;
         user-select: none;
         transition:
-          opacity 240ms ease,
-          transform 180ms cubic-bezier(0.16, 1, 0.3, 1),
-          background 180ms ease,
-          border-color 180ms ease,
-          box-shadow 180ms ease;
+          opacity 250ms ease,
+          transform 280ms cubic-bezier(0.34, 1.56, 0.64, 1),
+          background 200ms ease,
+          border-color 200ms ease,
+          box-shadow 200ms ease;
         opacity: 0;
-        transform: translateY(-4px) scale(0.96);
+        transform: translateY(-6px) scale(0.94);
         pointer-events: none;
       }
       .wos-float-pill.wos-visible {
-        opacity: 0.92;
+        opacity: 0.95;
         transform: translateY(0) scale(1);
         pointer-events: auto;
       }
       .wos-float-pill:hover {
         opacity: 1;
-        background: linear-gradient(145deg, rgba(28, 32, 48, 0.95) 0%, rgba(14, 16, 24, 0.98) 100%);
-        border-color: rgba(255, 255, 255, 0.28);
+        background: rgba(14, 16, 28, 0.96);
+        border-color: rgba(129, 140, 248, 0.35);
         box-shadow:
-          inset 0 1px 0 0 rgba(255, 255, 255, 0.25),
-          0 10px 28px rgba(0, 0, 0, 0.65);
-        transform: translateY(-1px) scale(1.02);
+          0 0 0 1px rgba(255, 255, 255, 0.05) inset,
+          0 12px 32px rgba(0, 0, 0, 0.6),
+          0 0 20px rgba(129, 140, 248, 0.12);
+        transform: translateY(-2px) scale(1.03);
       }
       .wos-float-pill:active {
-        transform: translateY(0) scale(0.98);
+        transform: translateY(0) scale(0.97);
       }
       .wos-float-pill:focus-visible {
-        outline: 2px solid rgba(255, 255, 255, 0.9);
+        outline: 2px solid rgba(129, 140, 248, 0.8);
         outline-offset: 3px;
       }
       @media (prefers-reduced-motion: reduce) {
@@ -105,13 +107,12 @@ export class WOSFloatingTrigger {
         }
       }
       .wos-float-icon {
-        color: rgba(255, 255, 255, 0.82);
+        color: #818cf8;
         display: flex;
         align-items: center;
       }
       .wos-float-text {
-        color: #ffffff;
-        text-shadow: 0 1px 2px rgba(0, 0, 0, 0.5);
+        color: #f1f5f9;
       }
     `;
     this.shadow.appendChild(style);

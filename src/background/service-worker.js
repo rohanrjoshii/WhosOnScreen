@@ -128,6 +128,7 @@ async function triggerCastIndexing(titleKey, castList, tabId = null) {
       castList: castList.map(p => ({
         id: p.id,
         name: p.name,
+        character: p.character || '',
         profileUrl: p.profileUrl || null,
       })),
     });
@@ -501,7 +502,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     return true;
   }
 
-  // ─── Song Identification (Audio Fingerprinting) ────────────────────────────
+  // ─── Song Identification (Audio Fingerprinting via AcoustID) ────────────────
   if (message.type === MSG.IDENTIFY_SONG) {
     const tabId = sender.tab?.id;
     if (!tabId) {
@@ -511,14 +512,6 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
 
     (async () => {
       try {
-        // Check the credential before requesting a tab stream or starting a
-        // recording, so a missing key fails immediately.
-        const { auddApiKey = '' } = await chrome.storage.local.get('auddApiKey');
-        if (!auddApiKey.trim()) {
-          sendResponse({ ok: false, error: 'Add an AudD API token in Settings to identify songs.' });
-          return;
-        }
-
         console.log('[wos:bg] Starting song identification via tab audio capture...');
         await ensureOffscreen();
 
@@ -538,11 +531,12 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
           );
         });
 
-        // 2. Delegate recording and AudD querying to the offscreen document.
+        // 2. Delegate recording and AcoustID querying to the offscreen document.
+        //    No user API token needed — AcoustID is free.
         const result = await chrome.runtime.sendMessage({
           type: MSG.RECORD_AND_IDENTIFY_SONG,
           streamId,
-          apiToken: auddApiKey.trim(),
+          apiToken: '',
         });
 
         sendResponse(result || { ok: false, error: 'No response from audio recognition processor' });

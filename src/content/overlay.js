@@ -657,6 +657,7 @@ export class WOSOverlay {
     card.setAttribute('tabindex', '0');
     card.setAttribute('aria-label', `View ${person.name || 'actor'} profile`);
     card.title = `View ${person.name || 'actor'}'s profile`;
+    card.dataset.confidence = person.confidence || 'low';
     card.addEventListener('click', () => this._openActorDetail(person));
     card.addEventListener('keydown', (event) => {
       if (event.key === 'Enter' || event.key === ' ') {
@@ -665,7 +666,7 @@ export class WOSOverlay {
       }
     });
 
-    // 64px Headshot with subtle ambient rim
+    // Headshot with subtle ambient rim
     const photoWrap = document.createElement('div');
     photoWrap.className = 'wos-photo-wrap';
 
@@ -682,7 +683,7 @@ export class WOSOverlay {
     }
     card.appendChild(photoWrap);
 
-    // Info: vertical stack of Name and Character
+    // Info: vertical stack of Name, Character, and Confidence
     const info = document.createElement('div');
     info.className = 'wos-info';
 
@@ -721,6 +722,27 @@ export class WOSOverlay {
     }
 
     info.appendChild(charRow);
+
+    // Confidence indicator bar
+    if (person.confidence && person.matchType !== 'top_billed') {
+      const confRow = document.createElement('div');
+      confRow.className = 'wos-confidence-indicator';
+
+      const confBar = document.createElement('div');
+      confBar.className = 'wos-confidence-bar';
+      const confFill = document.createElement('div');
+      confFill.className = `wos-confidence-fill ${person.confidence}`;
+      confBar.appendChild(confFill);
+      confRow.appendChild(confBar);
+
+      const confLabel = document.createElement('span');
+      confLabel.className = `wos-confidence-label ${person.confidence}`;
+      confLabel.textContent = person.confidence === 'high' ? 'Confirmed' : person.confidence === 'mid' ? 'Likely' : 'Possible';
+      confRow.appendChild(confLabel);
+
+      info.appendChild(confRow);
+    }
+
     card.appendChild(info);
 
     card.style.setProperty('--wos-i', index);
@@ -839,6 +861,40 @@ export class WOSOverlay {
     heroInfo.append(name, role, meta);
     hero.appendChild(heroInfo);
     container.appendChild(hero);
+
+    // Scene Context Card — shows who this character is in the current scene
+    if (person.character && this._title) {
+      const sceneCtx = document.createElement('div');
+      sceneCtx.className = 'wos-scene-context';
+
+      const sceneTitle = document.createElement('div');
+      sceneTitle.className = 'wos-scene-context-title';
+      sceneTitle.innerHTML = `<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M12 16v-4"/><path d="M12 8h.01"/></svg> In This Scene`;
+      sceneCtx.appendChild(sceneTitle);
+
+      const sceneBody = document.createElement('p');
+      sceneBody.className = 'wos-scene-context-body';
+
+      const matchInfo = person.matchType === 'face_match' || person.matchType === 'speaking_match'
+        ? `<strong>${person.name}</strong> is currently visible on screen`
+        : person.matchType === 'dialogue_match'
+          ? `<strong>${person.name}</strong> is speaking in this scene`
+          : `<strong>${person.name}</strong> is a lead in this title`;
+
+      const charInfo = person.character
+        ? `, playing the role of <strong>${this._escapeHtml(person.character)}</strong> in <strong>${this._escapeHtml(this._title)}</strong>.`
+        : ` in <strong>${this._escapeHtml(this._title)}</strong>.`;
+
+      const confInfo = person.confidence === 'high'
+        ? ' Match confidence: high.'
+        : person.confidence === 'mid'
+          ? ' Match confidence: likely.'
+          : '';
+
+      sceneBody.innerHTML = matchInfo + charInfo + confInfo;
+      sceneCtx.appendChild(sceneBody);
+      container.appendChild(sceneCtx);
+    }
 
     // Biography section
     const bioText =
@@ -1575,6 +1631,7 @@ export class WOSOverlay {
       'media-session': 'Media',
       'generic': 'Audio',
       'audd': 'Identified',
+      'acoustid': 'Identified',
       'identified': '🎯 Match',
     };
     return names[source] || source;

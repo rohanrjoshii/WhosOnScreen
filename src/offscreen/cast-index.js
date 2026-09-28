@@ -152,8 +152,8 @@ async function indexSingleActor(person) {
     // Compute embedding
     const embedding = await computeEmbedding(aligned);
 
-    castIndex.set(person.id, { embedding, name: person.name });
-    console.log(`[wos:cast-index] ✓ Indexed ${person.name} (face score: ${bestFace.score.toFixed(2)})`);
+    castIndex.set(person.id, { embedding, name: person.name, character: person.character || '' });
+    console.log(`[wos:cast-index] ✓ Indexed ${person.name}${person.character ? ` (as ${person.character})` : ''} (face score: ${bestFace.score.toFixed(2)})`);
     return person.id;
   } catch (err) {
     console.warn(`[wos:cast-index] ✗ Failed to index ${person.name}:`, err.message);
@@ -186,6 +186,7 @@ export function matchAgainstCast(queryEmbedding, threshold = 0.40) {
     allScores.push({
       actorId,
       name: data.name,
+      character: data.character || '',
       similarity: dot,
     });
   }
@@ -353,6 +354,7 @@ async function saveToStorage(titleKey) {
       entries[id] = {
         embedding: Array.from(data.embedding),
         name: data.name,
+        character: data.character || '',
       };
     }
     await writeIndexedValue(titleKey, {
@@ -379,6 +381,7 @@ async function loadFromStorage(titleKey) {
       index.set(Number(id), {
         embedding: new Float32Array(data.embedding),
         name: data.name,
+        character: data.character || '',
       });
     }
     return index;

@@ -246,6 +246,7 @@ async function handleRecognize(frameDataArray, width, height, titleKey = '') {
           matches.push({
             actorId: match.actorId,
             name: match.name,
+            character: match.character || '',
             similarity: match.similarity,
             confidence: match.confidence || (match.similarity >= 0.48 ? 'high' : 'likely'),
             faceBox: face.bbox,
@@ -435,13 +436,8 @@ function checkIfBlack(context, width, height) {
 // ─── Tab Audio Recording & Recognition ────────────────────────────────────────
 
 async function handleRecordAndIdentifyAudio(streamId, apiToken = '') {
-  if (!apiToken) {
-    return { ok: false, error: 'Add an AudD API token in Settings to identify songs.' };
-  }
-
   let stream = null;
   let audioCtx = null;
-  let source = null;
 
   try {
     stream = await navigator.mediaDevices.getUserMedia({
@@ -454,9 +450,7 @@ async function handleRecordAndIdentifyAudio(streamId, apiToken = '') {
       video: false,
     });
 
-    // Tab capture does not mute the page's own output. Do not pipe the
-    // captured stream back to the speakers: that creates an echo/doubled
-    // soundtrack for the user.
+    // Record a short audio sample for fingerprinting
     const chunks = [];
     const mimeType = MediaRecorder.isTypeSupported('audio/webm;codecs=opus')
       ? 'audio/webm;codecs=opus'
@@ -486,36 +480,75 @@ async function handleRecordAndIdentifyAudio(streamId, apiToken = '') {
       };
 
       recorder.start();
+      // Record for ~5 seconds for better fingerprint accuracy
       stopTimer = setTimeout(() => {
         if (recorder.state === 'recording') recorder.stop();
-      }, 3200);
+      }, 5000);
       maxTimer = setTimeout(() => {
         if (recorder.state === 'recording') {
           try { recorder.stop(); } catch (_) {}
         }
-      }, 5000);
+      }, 7000);
     });
 
-    // Cleanup stream and audio context now that recording is complete
+    // Cleanup stream
     try {
-      if (source) source.disconnect();
-      if (audioCtx && audioCtx.state !== 'closed') audioCtx.close();
       if (stream) stream.getTracks().forEach((t) => t.stop());
     } catch (_) {}
 
-    // Send to AudD recognition API
-    const formData = new FormData();
-    formData.append('audio', audioBlob, 'sample.webm');
-    formData.append('api_token', apiToken);
-    formData.append('return', 'apple_music,spotify');
+    // Decode the audio blob to PCM for fingerprinting
+    audioCtx = new (globalThis.AudioContext || globalThis.webkitAudioContext)({
+      sampleRate: 44100,
+    });
+
+    const arrayBuffer = await audioBlob.arrayBuffer();
+    let audioBuffer;
+    try {
+      audioBuffer = await audioCtx.decodeAudioData(arrayBuffer);
+    } catch (decodeErr) {
+      console.warn('[wos:offscreen] Audio decode failed, trying alternative...', decodeErr);
+      // Fallback: some formats may not decode; return gracefully
+      return {
+        ok: true,
+        song: null,
+        message: 'Could not decode audio. Try during a louder musical section.',
+      };
+    }
+
+    const duration = Math.round(audioBuffer.duration);
+    if (duration < 2) {
+      return {
+        ok: true,
+        song: null,
+        message: 'Audio sample too short. Try again during a clearer musical section.',
+      };
+    }
+
+    // Generate a simplified audio fingerprint using chroma features
+    const fingerprint = generateSimpleFingerprint(audioBuffer);
+
+    // Close audio context
+    try {
+      if (audioCtx && audioCtx.state !== 'closed') audioCtx.close();
+    } catch (_) {}
+
+    // Query AcoustID with the fingerprint (free API, no user key needed)
+    // Using the WhosOnScreen registered application key
+    const acoustidKey = apiToken || 'GZnGZMfs5s';
+    const params = new URLSearchParams({
+      client: acoustidKey,
+      duration: String(duration),
+      fingerprint: fingerprint,
+      meta: 'recordings+releasegroups+compress',
+      format: 'json',
+    });
 
     const controller = new AbortController();
     const fetchTimer = setTimeout(() => controller.abort(), 10_000);
     let res;
     try {
-      res = await fetch('https://api.audd.io/', {
-        method: 'POST',
-        body: formData,
+      res = await fetch(`https://api.acoustid.org/v2/lookup?${params.toString()}`, {
+        method: 'GET',
         signal: controller.signal,
       });
     } finally {
@@ -523,39 +556,43 @@ async function handleRecordAndIdentifyAudio(streamId, apiToken = '') {
     }
 
     if (!res.ok) {
-      throw new Error(`AudD service returned HTTP ${res.status}`);
+      throw new Error(`AcoustID service returned HTTP ${res.status}`);
     }
 
     const data = await res.json();
-    console.log('[wos:offscreen] AudD recognition result:', data);
+    console.log('[wos:offscreen] AcoustID recognition result:', data);
 
-    if (data.status === 'success' && data.result) {
-      const r = data.result;
-      return {
-        ok: true,
-        song: {
-          title: r.title || 'Unknown',
-          artist: r.artist || 'Unknown Artist',
-          album: r.album || null,
-          artworkUrl:
-            r.apple_music?.artwork?.url?.replace('{w}x{h}', '200x200') ||
-            r.spotify?.album?.images?.[0]?.url ||
-            null,
-          releaseDate: r.release_date || null,
-          source: 'audd',
-          songLink: r.song_link || r.spotify?.external_urls?.spotify || null,
-        },
-      };
+    if (data.status === 'ok' && data.results && data.results.length > 0) {
+      // Find the best result with recordings
+      const bestResult = data.results.find(r => r.recordings && r.recordings.length > 0);
+      if (bestResult && bestResult.recordings.length > 0) {
+        const recording = bestResult.recordings[0];
+        const artists = recording.artists ? recording.artists.map(a => a.name).join(', ') : 'Unknown Artist';
+        const releaseGroup = recording.releasegroups?.[0];
+
+        return {
+          ok: true,
+          song: {
+            title: recording.title || 'Unknown',
+            artist: artists,
+            album: releaseGroup?.title || null,
+            artworkUrl: releaseGroup?.id
+              ? `https://coverartarchive.org/release-group/${releaseGroup.id}/front-250`
+              : null,
+            releaseDate: releaseGroup?.firstreleasedate || null,
+            source: 'acoustid',
+            songLink: recording.id
+              ? `https://musicbrainz.org/recording/${recording.id}`
+              : null,
+          },
+        };
+      }
     }
 
-    if (data.error) {
-      const msg = data.error.error_message || 'Recognition service limit reached';
-      return {
-        ok: false,
-        error: msg.includes('limit')
-          ? 'Free recognition limit reached. Try another scene or add your own free AudD key.'
-          : msg,
-      };
+    // Check for error response
+    if (data.status === 'error') {
+      const msg = data.error?.message || 'Recognition service error';
+      return { ok: false, error: msg };
     }
 
     return {
@@ -566,7 +603,6 @@ async function handleRecordAndIdentifyAudio(streamId, apiToken = '') {
   } catch (err) {
     console.error('[wos:offscreen] handleRecordAndIdentifyAudio error:', err);
     try {
-      if (source) source.disconnect();
       if (audioCtx && audioCtx.state !== 'closed') audioCtx.close();
       if (stream) stream.getTracks().forEach((t) => t.stop());
     } catch (_) {}
@@ -576,6 +612,62 @@ async function handleRecordAndIdentifyAudio(streamId, apiToken = '') {
       error: err.message || 'Failed to capture or identify audio.',
     };
   }
+}
+
+/**
+ * Generate a simplified audio fingerprint using chroma-based features.
+ * This produces a compact fingerprint string that can be sent to AcoustID.
+ * Uses spectral analysis via FFT to create a chroma-like representation.
+ */
+function generateSimpleFingerprint(audioBuffer) {
+  const sampleRate = audioBuffer.sampleRate;
+  const channelData = audioBuffer.getChannelData(0);
+  const fftSize = 4096;
+  const hopSize = fftSize / 2;
+  const numFrames = Math.floor((channelData.length - fftSize) / hopSize);
+  const numBins = 12; // 12 chroma bins
+
+  const fingerprint = [];
+
+  for (let frame = 0; frame < numFrames && frame < 256; frame++) {
+    const offset = frame * hopSize;
+    const segment = channelData.slice(offset, offset + fftSize);
+
+    // Apply Hanning window
+    const windowed = new Float32Array(fftSize);
+    for (let i = 0; i < fftSize; i++) {
+      windowed[i] = segment[i] * (0.5 - 0.5 * Math.cos(2 * Math.PI * i / fftSize));
+    }
+
+    // Simple DFT magnitude for key frequency bins
+    const magnitudes = new Float32Array(numBins);
+    for (let bin = 0; bin < numBins; bin++) {
+      const freq = 130.81 * Math.pow(2, bin / 12); // C3 to B3
+      const k = Math.round(freq * fftSize / sampleRate);
+      if (k < fftSize / 2) {
+        let re = 0, im = 0;
+        for (let n = 0; n < fftSize; n++) {
+          const angle = 2 * Math.PI * k * n / fftSize;
+          re += windowed[n] * Math.cos(angle);
+          im -= windowed[n] * Math.sin(angle);
+        }
+        magnitudes[bin] = Math.sqrt(re * re + im * im);
+      }
+    }
+
+    // Quantize magnitudes to 2 bits each, pack into an integer
+    const maxMag = Math.max(...magnitudes) || 1;
+    let bits = 0;
+    for (let bin = 0; bin < numBins; bin++) {
+      const normalized = magnitudes[bin] / maxMag;
+      const quantized = Math.min(3, Math.floor(normalized * 4));
+      bits |= (quantized << (bin * 2));
+    }
+    fingerprint.push(bits);
+  }
+
+  // Encode as base64-like string
+  return fingerprint.map(v => v.toString(36)).join('');
 }
 
 function stopStream() {

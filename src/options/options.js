@@ -1,7 +1,6 @@
 import { MSG } from '../shared/messages.js';
 
 const tmdbInput = document.getElementById('tmdb-key');
-const auddInput = document.getElementById('audd-key');
 const autoPauseInput = document.getElementById('auto-pause');
 const status = document.getElementById('status');
 const saveButton = document.getElementById('save');
@@ -9,13 +8,12 @@ const clearButton = document.getElementById('clear-cache');
 
 function showStatus(message, isError = false) {
   status.textContent = message;
-  status.style.color = isError ? '#fca5a5' : '#86efac';
+  status.style.color = isError ? '#f87171' : '#34d399';
 }
 
 async function loadSettings() {
-  const values = await chrome.storage.local.get(['tmdbApiKey', 'auddApiKey', 'wosAutoPause']);
+  const values = await chrome.storage.local.get(['tmdbApiKey', 'wosAutoPause']);
   tmdbInput.value = values.tmdbApiKey || '';
-  auddInput.value = values.auddApiKey || '';
   autoPauseInput.checked = !!values.wosAutoPause;
 }
 
@@ -24,7 +22,6 @@ async function saveSettings() {
   try {
     await chrome.storage.local.set({
       tmdbApiKey: tmdbInput.value.trim(),
-      auddApiKey: auddInput.value.trim(),
       wosAutoPause: autoPauseInput.checked,
     });
     showStatus('Settings saved.');

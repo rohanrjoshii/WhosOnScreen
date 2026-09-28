@@ -217,11 +217,13 @@ export class WOSFaceEngine {
 
         matchedCast.push({
           ...actor,
+          character: actor.character || match.character || '',
           isSceneLead: true,
           matchType,
           matchLabel,
           confidence: match.confidence,
           similarity: match.similarity,
+          faceBox: match.faceBox || null,
           faceIndex: matchedCast.length + 1,
         });
       }
